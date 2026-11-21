@@ -3,22 +3,60 @@
 @tailwind utilities;
 
 :root {
+  /* Brand greens */
   --brand-50:  #F0F7F0;  --brand-100: #DCEDDD;  --brand-200: #B8DBBA;
   --brand-300: #8AC28E;  --brand-400: #5AA35F;  --brand-500: #2E7D34;
   --brand-600: #1B6420;  --brand-700: #083B10;  --brand-800: #062E0C;
   --brand-900: #041F08;
+  /* Cream paper */
   --cream: #FFFAEC;  --cream-100: #FFF4D6;  --cream-200: #F5E8C4;
   --ink: #0B1A0C;  --ink-muted: #4A5D4C;
-  --answer-red: #D9294A;  --answer-blue: #1268C9;
-  --answer-yellow: #C99200;  --answer-green: #1F7A3A;
+  /* Kahoot-style answer colours. Each is paired with a shape, never used alone as a signal. */
+  --answer-red: #D9294A;    --answer-blue: #1268C9;
+  --answer-yellow: #D99A00; --answer-green: #1F7A3A;
+  --answer-purple: #6E2FB8; --answer-orange: #E0661C;
   --success: #1F7A3A;  --danger: #B4232F;  --warning: #A86B00;
+  /* Podium metals */
+  --gold: #E6B422; --silver: #B7BEC7; --bronze: #C97B3A;
 }
 
 html, body, #root { height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
 body {
   font-family: 'Inter', system-ui, sans-serif;
   color: var(--ink);
   background: var(--cream);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
 }
-h1, h2, h3 { font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif; letter-spacing: -0.01em; }
+h1, h2, h3 { font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif; letter-spacing: -0.015em; }
+
+/* One focus style everywhere; components layer their own ring on top where useful. */
+:focus-visible { outline: 3px solid var(--brand-400); outline-offset: 3px; border-radius: 0.5rem; }
+button, [role="button"] { touch-action: manipulation; }
+img { max-width: 100%; }
+
+/* Soft radial glow for the projector shell. */
+.host-backdrop {
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(90, 163, 95, 0.35), transparent 60%),
+    radial-gradient(800px 500px at 100% 100%, rgba(8, 59, 16, 0.6), transparent 60%),
+    var(--brand-700);
+}
+/* Faint paper gradient for phones. */
+.player-backdrop {
+  background:
+    radial-gradient(600px 300px at 50% -5%, rgba(220, 237, 221, 0.9), transparent 70%),
+    var(--cream);
+}
+
+/* Reduced motion: collapse every animation and transition to (effectively) instant. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

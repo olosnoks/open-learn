@@ -1,10 +1,5 @@
 import { useEffect, useState } from 'react';
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
+import { prefersReducedMotion } from '../../components/ui/motion';
 
 /**
  * Animates a number from `from` to `to` with an ease-out curve. Jumps straight to `to`

@@ -1,22 +1,32 @@
 import { cn } from '../../lib/cn';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type Size = 'sm' | 'md' | 'lg';
+type Size = 'sm' | 'md' | 'lg' | 'xl';
 
+/**
+ * The one button. `primary` is brand green for cream pages; `secondary` is the cream pill
+ * that reads well on the dark host shell; `ghost` is low-emphasis on either background.
+ */
 export function Button({
   variant = 'primary', size = 'md', className, type = 'button', ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
-  const base = 'inline-flex items-center justify-center font-semibold rounded-tile transition-transform active:translate-y-[1px] disabled:opacity-50 disabled:pointer-events-none';
+  const base = cn(
+    'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-tile font-semibold',
+    'transition-[transform,box-shadow,background-color,color,opacity] duration-150',
+    'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-400/60',
+    'active:translate-y-[2px] disabled:pointer-events-none disabled:opacity-50',
+  );
   const variants: Record<Variant, string> = {
-    primary: 'bg-brand-700 text-cream shadow-tile hover:bg-brand-800 active:shadow-tile-pressed',
-    secondary: 'bg-cream text-brand-700 border-2 border-brand-700 hover:bg-cream-100',
-    ghost: 'bg-transparent text-current hover:bg-brand-50/20',
-    danger: 'bg-[var(--danger)] text-cream hover:brightness-110',
+    primary: 'bg-brand-700 text-cream shadow-tile hover:bg-brand-600 active:shadow-tile-pressed',
+    secondary: 'border-2 border-brand-700 bg-cream text-brand-800 shadow-tile hover:bg-white active:shadow-tile-pressed',
+    ghost: 'bg-transparent text-current hover:bg-black/10 active:bg-black/15',
+    danger: 'bg-[var(--danger)] text-cream shadow-tile hover:brightness-110 active:shadow-tile-pressed',
   };
   const sizes: Record<Size, string> = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-5 py-2.5 text-base',
-    lg: 'px-8 py-4 text-xl',
+    sm: 'h-9 px-3 text-sm',
+    md: 'h-11 px-5 text-base',
+    lg: 'h-14 px-8 text-lg',
+    xl: 'h-16 px-10 text-xl',
   };
   return <button type={type} className={cn(base, variants[variant], sizes[size], className)} {...props} />;
 }

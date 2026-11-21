@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { HostShell } from '../../components/layout/HostShell';
+import { BrandMark } from '../../components/game/AnswerShapeLogo';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
@@ -43,11 +44,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
 
   return (
     <HostShell nav={false}>
-      <div className="m-auto w-full max-w-md">
-        <p className="mb-2 text-center text-sm font-semibold uppercase tracking-widest text-brand-300">
-          mscoding.org · Live Quiz
-        </p>
-        <h1 className="mb-6 text-center text-4xl font-bold">{isRegister ? 'Create your host account' : 'Host log in'}</h1>
+      <div className="m-auto w-full max-w-md motion-safe:animate-fade-up">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <BrandMark className="h-12 w-12" />
+          <p className="mt-3 text-sm font-semibold uppercase tracking-widest text-brand-300">Live Quiz</p>
+          <h1 className="mt-1 font-display text-4xl font-bold">{isRegister ? 'Create your host account' : 'Host log in'}</h1>
+        </div>
         <Card className="bg-cream text-ink">
           <form onSubmit={submit} className="flex flex-col gap-4">
             {fields.map((f) => (
@@ -66,8 +68,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
                 {f === 'password' && isRegister && <p className="mt-1 text-xs text-ink-muted">At least 8 characters.</p>}
               </div>
             ))}
-            {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-            <Button type="submit" size="lg" disabled={busy}>
+            {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}
+            <Button type="submit" size="lg" disabled={busy} className="mt-1">
               {isRegister ? 'Create account' : 'Log in'}
             </Button>
           </form>

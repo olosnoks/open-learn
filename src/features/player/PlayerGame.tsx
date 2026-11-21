@@ -3,8 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { PlayerShell } from '../../components/layout/PlayerShell';
 import { CountdownRing } from '../../components/game/CountdownRing';
 import { Leaderboard } from '../../components/game/Leaderboard';
+import { AnswerTile } from '../../components/game/AnswerTile';
+import { QuestionImage } from '../../components/game/QuestionImage';
 import { Card } from '../../components/ui/Card';
-import { cn } from '../../lib/cn';
 import { PlayerFeedback } from './PlayerFeedback';
 import { AnswerInput, type PickedAnswer } from './AnswerInput';
 import { gapLine, rankLine, teamLine } from './standing';
@@ -12,23 +13,20 @@ import { useRoomSocket } from '../../lib/useRoomSocket';
 import { useNow } from '../../lib/useNow';
 import { clearPlayerIdentity, getPlayerIdentity } from '../../lib/storage';
 import type {
-  CorrectAnswer, GamePhase, PersonalStanding, PlayerRow, ServerEvent, Standings,
+  CorrectAnswer, GamePhase, PersonalStanding, PlayerRow, RoomSettings, ServerEvent, Standings,
   TeamWithMembers, WireQuestion,
 } from '../../shared/types';
 
-const PICK_STYLES = {
-  red: 'bg-answer-red text-cream',
-  blue: 'bg-answer-blue text-cream',
-  yellow: 'bg-answer-yellow text-ink',
-  green: 'bg-answer-green text-cream',
-} as const;
-
 type Me = { nickname: string | null; team: { id: string; name: string; color: string } | null };
+
+const isChoiceType = (q: WireQuestion) =>
+  q.config.type === 'quiz' || q.config.type === 'multi_select' || q.config.type === 'poll';
 
 export function PlayerGame() {
   const { code = '' } = useParams<{ code: string }>();
   const [phase, setPhase] = useState<GamePhase>('lobby');
   const [question, setQuestion] = useState<WireQuestion | null>(null);
+  const [settings, setSettings] = useState<RoomSettings | null>(null);
   const [endsAt, setEndsAt] = useState(0);
   const [serverOffset, setServerOffset] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -56,6 +54,7 @@ export function PlayerGame() {
   const everOpenRef = useRef(false);
 
   const now = useNow(phase === 'question' && !paused) + serverOffset;
+  const showAnswers = settings?.showAnswersOnDevices ?? true;
 
   const syncMe = (players: PlayerRow[], teams: TeamWithMembers[]) => {
     setPlayerCount(players.length);
@@ -71,6 +70,7 @@ export function PlayerGame() {
   const { send, status } = useRoomSocket(code, (event: ServerEvent) => {
     switch (event.type) {
       case 'WELCOME': {
+        if (event.snapshot?.settings) setSettings(event.snapshot.settings);
         // Every (re)connection is a fresh socket: re-bind it to our player identity.
         const identity = getPlayerIdentity();
         if (identity && identity.roomCode === code) {
@@ -85,6 +85,7 @@ export function PlayerGame() {
         break;
       case 'RECONNECTED': {
         const s = event.snapshot;
+        if (s.settings) setSettings(s.settings);
         setScore(event.score); setStreak(event.streak);
         setServerOffset(s.serverTime - Date.now());
         setPaused(Boolean(s.paused));
@@ -163,22 +164,24 @@ export function PlayerGame() {
     <PlayerShell reconnecting={reconnecting}>{children}</PlayerShell>
   );
 
+  const linkClass = 'rounded font-semibold text-brand-700 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700';
+
   if (fatal && phase !== 'finished') {
     return shell(
-      <Card className="text-center">
+      <Card className="m-auto w-full text-center">
         <p role="alert" className="text-lg font-semibold">{fatal}</p>
-        <Link to={`/join/${code}`} className="mt-4 inline-block rounded font-semibold text-brand-700 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700">Back to join</Link>
+        <Link to={`/join/${code}`} className={`mt-4 inline-block ${linkClass}`}>Back to join</Link>
       </Card>
     );
   }
 
   if (phase === 'lobby') {
     return shell(
-      <Card className="text-center">
-        <p className="text-sm font-semibold uppercase tracking-widest text-brand-500">In lobby</p>
-        <h1 className="mt-2 text-2xl font-bold text-brand-700">You're in!</h1>
+      <Card className="m-auto w-full text-center motion-safe:animate-pop-in">
+        <p className="text-xs font-semibold uppercase tracking-widest text-brand-500">In lobby</p>
+        <h1 className="mt-2 font-display text-3xl font-bold text-brand-700">You're in!</h1>
         {me.nickname && (
-          <p className="mt-4 text-3xl font-bold text-ink [overflow-wrap:anywhere]" data-testid="my-nickname">
+          <p className="mt-4 font-display text-3xl font-bold text-ink [overflow-wrap:anywhere]" data-testid="my-nickname">
             {me.nickname}
           </p>
         )}
@@ -189,9 +192,12 @@ export function PlayerGame() {
             Team {me.team.name}
           </p>
         )}
-        <p className="mt-4 text-ink-muted">Waiting for the host to start…</p>
+        <div className="mt-6 rounded-tile bg-brand-50 p-4">
+          <p className="font-display text-xl font-bold text-brand-800">Look at the screen!</p>
+          <p className="mt-1 text-sm text-ink-muted">Waiting for the host to start…</p>
+        </div>
         {playerCount !== null && playerCount > 1 && (
-          <p className="mt-1 text-sm text-ink-muted">{playerCount} players have joined</p>
+          <p className="mt-3 text-sm text-ink-muted" aria-live="polite">{playerCount} players have joined</p>
         )}
       </Card>
     );
@@ -200,6 +206,7 @@ export function PlayerGame() {
   if (phase === 'question' && question) {
     const remaining = Math.max(0, (endsAt - now) / 1000);
     const timeUp = remaining <= 0;
+    const shapesOnly = !showAnswers && isChoiceType(question);
     const answer = (value: unknown, choice: PickedAnswer) => {
       if (picked) return;
       setPicked(choice);
@@ -209,21 +216,28 @@ export function PlayerGame() {
     };
     return shell(
       <>
-        <div className="mb-4 flex items-center justify-between">
-          <span className="text-sm font-semibold text-ink-muted">Q{question.index + 1} · {score} pts</span>
-          {question.type !== 'slide' && <CountdownRing remaining={remaining} total={question.timeLimitSec} />}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-brand-500">Question {question.index + 1}</p>
+            <p className="font-semibold tabular-nums text-ink-muted">{score} pts</p>
+          </div>
+          {question.type !== 'slide' && <CountdownRing size="sm" remaining={remaining} total={question.timeLimitSec} />}
         </div>
-        <h2 className="mb-6 text-xl font-bold text-ink">{question.prompt}</h2>
+        <h2 className="mb-4 font-display text-xl font-bold leading-snug text-ink [overflow-wrap:anywhere]">{question.prompt}</h2>
+        <QuestionImage src={question.imageUrl} variant="player" className="mb-4" />
         {paused ? (
-          <Card className="text-center"><p className="text-lg font-semibold">Paused by host</p></Card>
+          <Card className="text-center"><p role="status" className="text-lg font-semibold">Paused by host</p></Card>
         ) : submitted || picked ? (
           <SubmittedCard picked={picked} confirmed={submitted} />
         ) : timeUp && question.type !== 'slide' ? (
-          <Card className="text-center"><p className="text-lg font-semibold">Time's up!</p></Card>
+          <Card className="text-center"><p role="status" className="text-lg font-semibold">Time's up!</p></Card>
         ) : (
-          <AnswerInput question={question} onSubmit={answer} />
+          <>
+            {shapesOnly && <p className="mb-3 text-center text-sm font-semibold text-ink-muted">Answers are on the big screen</p>}
+            <AnswerInput question={question} onSubmit={answer} showLabels={showAnswers} />
+          </>
         )}
-        {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
+        {error && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{error}</p>}
       </>
     );
   }
@@ -235,7 +249,7 @@ export function PlayerGame() {
       <PlayerFeedback
         question={question} correct={correct} correctAnswer={reveal ?? { type: 'none' }}
         answered={submitted} pointsAwarded={lastPoints} score={score} streak={streak}
-        team={team} standing={standing}
+        team={team} standing={standing} showAnswers={showAnswers}
       />
     );
   }
@@ -243,19 +257,20 @@ export function PlayerGame() {
   if (phase === 'finished') {
     const gap = standing ? gapLine(standing, true) : null;
     const highlightId = podium?.kind === 'teams' ? (standing?.team?.id ?? me.team?.id) : playerIdRef.current;
+    const top3 = standing && standing.rank <= 3;
     return shell(
       <>
-        <Card className="mb-4 text-center">
-          <h2 className="text-2xl font-bold text-brand-700">Game over</h2>
-          {me.nickname && <p className="mt-1 font-semibold text-ink-muted [overflow-wrap:anywhere]">{me.nickname}</p>}
+        <Card className={`mb-4 text-center motion-safe:animate-pop-in ${top3 ? 'ring-4 ring-metal-gold' : ''}`}>
+          <p className="text-xs font-semibold uppercase tracking-widest text-brand-500">Game over</p>
+          {me.nickname && <h2 className="mt-1 font-display text-2xl font-bold text-ink [overflow-wrap:anywhere]">{me.nickname}</h2>}
           {standing && (
-            <p aria-live="polite" className="mt-3 text-xl font-bold text-ink" data-testid="final-rank">
+            <p aria-live="polite" className="mt-4 font-display text-3xl font-bold text-brand-700" data-testid="final-rank">
               {rankLine(standing, true)}
             </p>
           )}
           {gap && <p className="mt-1 text-sm text-ink-muted">{gap}</p>}
-          <p className="mt-4 text-ink-muted">Your final score</p>
-          <p className="text-4xl font-bold tabular-nums">{standing?.score ?? score}</p>
+          <p className="mt-5 text-sm text-ink-muted">Your final score</p>
+          <p className="font-display text-5xl font-bold tabular-nums">{standing?.score ?? score}</p>
           {standing?.team && (
             <p className="mt-3 text-sm font-semibold text-ink">
               <span aria-hidden="true" className="mr-1.5 inline-block h-3 w-3 rounded-full align-middle"
@@ -265,36 +280,31 @@ export function PlayerGame() {
           )}
         </Card>
         {podium && <Leaderboard standings={podium} highlightId={highlightId} />}
-        <Link to="/join" className="mt-6 self-center rounded text-center font-semibold text-brand-700 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700">Join another game</Link>
+        <Link to="/join" className={`mt-6 self-center text-center ${linkClass}`}>Join another game</Link>
       </>
     );
   }
 
-  return shell(<p role="status" className="text-center text-ink-muted">Connecting…</p>);
+  return shell(<p role="status" className="m-auto text-center text-ink-muted">Connecting…</p>);
 }
 
 function SubmittedCard({ picked, confirmed }: { picked: PickedAnswer | null; confirmed: boolean }) {
   return (
-    <Card className="text-center">
-      <p role="status" className="text-lg font-semibold">{confirmed ? 'Answer submitted' : 'Sending…'}</p>
+    <Card className="text-center motion-safe:animate-pop-in">
+      <p role="status" className="font-display text-xl font-bold">{confirmed ? 'Answer submitted' : 'Sending…'}</p>
       {picked ? (
         <>
           <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-ink-muted">You picked</p>
-          <div className={cn(
-            'mt-2 flex items-center gap-3 rounded-tile p-3 text-left text-lg font-bold',
-            picked.color ? PICK_STYLES[picked.color] : 'bg-brand-50 text-ink'
-          )}>
-            {picked.index !== undefined && (
-              <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-black/20 text-sm">
-                {picked.index + 1}
-              </span>
-            )}
-            <span className="min-w-0 [overflow-wrap:anywhere]">{picked.label}</span>
-          </div>
-          <p className="mt-3 text-ink-muted">Waiting for others…</p>
+          {picked.color && picked.index !== undefined ? (
+            <AnswerTile readOnly selected color={picked.color} label={picked.label} index={picked.index}
+              hideLabel={picked.hideLabel} className="mt-2 min-h-[72px]" />
+          ) : (
+            <p className="mt-2 rounded-tile bg-brand-50 p-3 text-lg font-bold text-ink [overflow-wrap:anywhere]">{picked.label}</p>
+          )}
+          <p className="mt-4 text-sm text-ink-muted motion-safe:animate-shimmer">Waiting for others…</p>
         </>
       ) : (
-        <p className="text-ink-muted">Waiting for others…</p>
+        <p className="mt-2 text-sm text-ink-muted">Waiting for others…</p>
       )}
     </Card>
   );
