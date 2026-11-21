@@ -15,9 +15,7 @@
     {
       "binding": "DB",
       "database_name": "quiz-db",
-      // Local dev works with this placeholder. Replace with the id from
-      // `npx wrangler d1 create quiz-db` before deploying.
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "756d3e9b-e02d-4253-bcb3-5bb86b6e8625",
       "migrations_dir": "drizzle"
     }
   ],

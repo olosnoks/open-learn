@@ -35,6 +35,8 @@ Go to **Quizzes → Import from spreadsheet** (`/quizzes/import`). You can uploa
 | `time` | Seconds (5–240, default 20) |
 | `points` | 0–2000 (default 1000) |
 
+Ready-made question sets live in `quizzes/` (for example `quizzes/security-plus-practice-set-1.csv`); upload one as-is.
+
 You see a preview with the correct answers ticked before anything is saved. Rows with problems are listed with their spreadsheet row number and skipped. The parser is in `src/features/quiz-import/parseQuiz.ts`.
 
 ## Schema changes
