@@ -102,7 +102,8 @@ export type ServerEvent =
       type: 'WELCOME'; roomCode: string; isTeam: boolean; teams: TeamWithMembers[];
       players: PlayerRow[]; phase: GamePhase; snapshot: GameSnapshot;
     }
-  | { type: 'JOINED'; playerId: string; sessionId: string }
+  /** nickname is set when the room assigned one (nicknameGenerator option). */
+  | { type: 'JOINED'; playerId: string; sessionId: string; nickname?: string }
   | { type: 'RECONNECTED'; playerId: string; score: number; streak: number; snapshot: GameSnapshot }
   | { type: 'LOBBY_UPDATE'; players: PlayerRow[]; teams: TeamWithMembers[] }
   | {
