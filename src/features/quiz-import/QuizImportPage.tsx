@@ -62,7 +62,7 @@ export function QuizImportPage() {
         <h2 className="mb-2 text-lg font-bold">How it works</h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-ink-muted">
           <li>Download the template and open it in Google Sheets or Excel. Use one row per question.</li>
-          <li>Columns: <b>question</b>, <b>type</b>, <b>answer1–answer6</b>, <b>correct</b>, <b>time</b> (seconds), and <b>points</b>.</li>
+          <li>Columns: <b>question</b>, <b>type</b>, <b>answer1–answer6</b>, <b>correct</b>, <b>time</b> (seconds), <b>points</b>, and an optional <b>image</b> (an <code>https://</code> link to a picture shown with the question).</li>
           <li><b>correct</b> is the answer <i>number</i>: <code>2</code> for answer2, or <code>1,3</code> when more than one is correct. You can also type the answer text itself. For true/false, use <code>true</code> or <code>false</code>.</li>
           <li><b>type</b> can be left blank for normal multiple choice. Other options are <code>multi</code>, <code>truefalse</code>, <code>type</code> (players type the answer; every answer column is accepted), <code>poll</code>, <code>puzzle</code> (answers in the right order), and <code>slide</code>.</li>
           <li>Upload the file below, or copy the rows (with the header) and paste them in.</li>
@@ -142,6 +142,9 @@ function PreviewRow({ q, n }: { q: ImportedQuestion; n: number }) {
         <p className="font-semibold">{n}. {q.prompt}</p>
         <span className="text-xs text-ink-muted">{TYPE_LABEL[c.type]} · {q.timeLimitSec}s · {q.points} pts</span>
       </div>
+      {q.imageUrl && (
+        <img src={q.imageUrl} alt="" className="mt-2 max-h-24 rounded border border-brand-200 object-contain" loading="lazy" />
+      )}
       {note && <p className="mt-1 text-xs text-ink-muted">{note}</p>}
       {answers.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-2">

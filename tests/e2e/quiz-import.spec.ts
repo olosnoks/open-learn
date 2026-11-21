@@ -8,11 +8,11 @@ test('import a quiz from a spreadsheet file, then play-ready in the editor', asy
   await expect(page).toHaveURL(/\/quizzes\/import$/);
 
   const csv = [
-    'question,type,answer1,answer2,answer3,correct,time,points',
-    'Capital of France?,,Paris,Rome,Madrid,1,20,1000',
-    'Pick the primes,multi,2,4,7,"1,3",30,1000',
-    'Sun is a star,truefalse,,,,true,10,500',
-    'Broken row,,OnlyOne,,,1,20,1000',
+    'question,type,answer1,answer2,answer3,correct,time,points,image',
+    'Capital of France?,,Paris,Rome,Madrid,1,20,1000,https://placehold.co/200x100.png',
+    'Pick the primes,multi,2,4,7,"1,3",30,1000,',
+    'Sun is a star,truefalse,,,,true,10,500,',
+    'Broken row,,OnlyOne,,,1,20,1000,',
   ].join('\n');
   await page.getByLabel(/Upload a file/).setInputFiles({
     name: 'Science-week.csv', mimeType: 'text/csv', buffer: Buffer.from(csv),
@@ -34,6 +34,7 @@ test('import a quiz from a spreadsheet file, then play-ready in the editor', asy
   expect(quiz.questions.map((q: any) => q.type)).toEqual(['quiz', 'multi_select', 'true_false']);
   expect(quiz.questions[1].config.choices.filter((c: any) => c.isCorrect).map((c: any) => c.label)).toEqual(['2', '7']);
   expect(quiz.questions[2].config).toEqual({ type: 'true_false', correct: true });
+  expect(quiz.questions.map((q: any) => q.imageUrl)).toEqual(['https://placehold.co/200x100.png', null, null]);
 
   // It's immediately usable: it shows up when starting a game.
   await page.goto('/host/create');
