@@ -161,6 +161,21 @@ export class RoomDO extends DurableObject<Env> {
       phase: state.phase,
       snapshot: this.snapshot(state),
     });
+    // A socket that connects mid-reveal (the host screen opens a fresh socket when it navigates
+    // from the lobby, and players may reconnect) would otherwise never see the correct answer,
+    // the distribution or the standings: the snapshot carries none of them.
+    if (state.phase === 'reveal') {
+      const q = state.questions[state.currentIndex];
+      if (q) {
+        this.send(server, {
+          type: 'QUESTION_REVEALED',
+          questionId: q.id,
+          correct: getCorrectAnswer(q),
+          distribution: this.distribution(q.id),
+          standings: this.standings(),
+        });
+      }
+    }
     return new Response(null, { status: 101, webSocket: client });
   }
 
