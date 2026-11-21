@@ -5,7 +5,8 @@ import { QuestionConfigSchema, type QuestionConfig } from '../../shared/schemas'
  * payload POST /api/quizzes accepts. Pure: no DOM, no network — unit tested.
  *
  * Spreadsheet format — one row per question, header row required, column order free:
- *   question | type | answer1..answer6 | correct | time | points
+ *   question | type | answer1..answer6 | correct | time | points | image
+ * - image (or image_url / picture): optional https:// link to a picture shown with the question.
  * - type: quiz (default), multi, truefalse, type, poll, puzzle, slide (aliases accepted)
  * - correct: answer number(s) "2" or "1,3", or the answer text itself;
  *   true/false for truefalse. Not needed for poll / puzzle / slide / type.
@@ -19,7 +20,15 @@ export type ImportedQuestion = {
   timeLimitSec: number;
   points: number;
   type: QuestionConfig;
+  /** Optional https image URL (the `image` column). Absent when the cell is empty. */
+  imageUrl?: string;
 };
+
+/** Same rule as the Worker: an https:// URL that parses, at most 2048 characters. */
+export function isHttpsImageUrl(s: string): boolean {
+  if (s.length > 2048) return false;
+  try { return new URL(s).protocol === 'https:'; } catch { return false; }
+}
 
 export type ParseResult = {
   title?: string;
@@ -29,13 +38,13 @@ export type ParseResult = {
 };
 
 export const TEMPLATE_CSV = [
-  'question,type,answer1,answer2,answer3,answer4,correct,time,points',
-  'What is the capital of France?,quiz,Paris,Rome,Madrid,Berlin,1,20,1000',
-  'Which of these are prime numbers?,multi,2,4,7,9,"1,3",30,1000',
-  'The Earth orbits the Sun.,truefalse,,,,,true,10,500',
-  'Type the chemical symbol for water,type,H2O,H₂O,,,,20,1000',
-  'Put these planets in order from the Sun,puzzle,Mercury,Venus,Earth,Mars,,30,1000',
-  'Which topic should we do next?,poll,Space,Oceans,Dinosaurs,,,20,0',
+  'question,type,answer1,answer2,answer3,answer4,correct,time,points,image',
+  'What is the capital of France?,quiz,Paris,Rome,Madrid,Berlin,1,20,1000,',
+  'Which of these are prime numbers?,multi,2,4,7,9,"1,3",30,1000,',
+  'The Earth orbits the Sun.,truefalse,,,,,true,10,500,',
+  'Type the chemical symbol for water,type,H2O,H₂O,,,,20,1000,',
+  'Put these planets in order from the Sun,puzzle,Mercury,Venus,Earth,Mars,,30,1000,https://placehold.co/600x400',
+  'Which topic should we do next?,poll,Space,Oceans,Dinosaurs,,,20,0,',
 ].join('\n');
 
 const TYPE_ALIASES: Record<string, QuestionConfig['type']> = {
@@ -85,13 +94,14 @@ function detectDelimiter(firstLine: string): string {
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/[\s_-]+/g, ' ');
 
-function classifyHeader(h: string): { kind: 'question' | 'type' | 'correct' | 'time' | 'points' | 'answer' | 'ignore'; n?: number } {
+function classifyHeader(h: string): { kind: 'question' | 'type' | 'correct' | 'time' | 'points' | 'image' | 'answer' | 'ignore'; n?: number } {
   const k = norm(h);
   if (['question', 'prompt', 'q', 'question text'].includes(k)) return { kind: 'question' };
   if (['type', 'question type', 'kind'].includes(k)) return { kind: 'type' };
   if (['correct', 'correct answer', 'correct answers', 'answer key', 'key', 'right answer'].includes(k)) return { kind: 'correct' };
   if (['time', 'time limit', 'seconds', 'time (s)', 'timer', 'time limit sec'].includes(k)) return { kind: 'time' };
   if (['points', 'score', 'pts'].includes(k)) return { kind: 'points' };
+  if (['image', 'image url', 'picture', 'img', 'photo', 'media'].includes(k)) return { kind: 'image' };
   const m = k.match(/^(?:answer|option|choice|a)\s?(\d+)$/);
   if (m) return { kind: 'answer', n: Number(m[1]) };
   return { kind: 'ignore' };
@@ -147,6 +157,7 @@ export function parseSpreadsheet(text: string): ParseResult {
   }
   const col = (kind: string) => header.findIndex((h) => h.kind === kind);
   const typeCol = col('type'), correctCol = col('correct'), timeCol = col('time'), pointsCol = col('points');
+  const imageCol = col('image');
   const answerCols = header
     .map((h, i) => ({ ...h, i }))
     .filter((h) => h.kind === 'answer')
@@ -224,8 +235,10 @@ export function parseSpreadsheet(text: string): ParseResult {
     const points = Math.round(numberOr(cell(pointsCol), type === 'poll' || type === 'slide' ? 0 : 1000));
     if (timeLimitSec < 5 || timeLimitSec > 240) return fail('time must be between 5 and 240 seconds');
     if (points < 0 || points > 2000) return fail('points must be between 0 and 2000');
+    const imageUrl = cell(imageCol);
+    if (imageUrl && !isHttpsImageUrl(imageUrl)) return fail('image must be an https:// link');
 
-    questions.push({ prompt, timeLimitSec, points, type: parsed.data });
+    questions.push({ prompt, timeLimitSec, points, type: parsed.data, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return { questions, errors };
@@ -258,11 +271,14 @@ export function parseJson(text: string): ParseResult {
     const parsed = QuestionConfigSchema.safeParse(config);
     if (typeof q?.prompt !== 'string' || !q.prompt.trim()) return errors.push({ row, message: 'question has no prompt' });
     if (!parsed.success) return errors.push({ row, message: `${q.prompt.slice(0, 40)}: ${friendlyIssue(config?.type, parsed.error.issues[0])}` });
+    const imageUrl = typeof q.imageUrl === 'string' ? q.imageUrl.trim() : '';
+    if (imageUrl && !isHttpsImageUrl(imageUrl)) return errors.push({ row, message: `${q.prompt.slice(0, 40)}: image must be an https:// link` });
     questions.push({
       prompt: q.prompt.trim(),
       timeLimitSec: Number.isFinite(q.timeLimitSec) ? q.timeLimitSec : 20,
       points: Number.isFinite(q.points) ? q.points : 1000,
       type: parsed.data,
+      ...(imageUrl ? { imageUrl } : {}),
     });
   });
   return { title: typeof obj.title === 'string' ? obj.title : undefined, questions, errors };
