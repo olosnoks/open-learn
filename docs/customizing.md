@@ -28,9 +28,9 @@ Team colours in team mode are separate: `TEAM_DEFS` in `worker/room/RoomDO.ts` (
 
 ### Name and title
 
-The product name appears in these places; search for `Live Quiz` and `mscoding` to find them all:
+The product name appears in these places; search for `Live Quiz` to find them all:
 
-- `index.html`: `<title>Live Quiz · mscoding.org</title>` (the browser tab title)
+- `index.html`: `<title>Live Quiz</title>` (the browser tab title)
 - `src/components/layout/HostShell.tsx`: header label on host pages
 - `src/features/auth/AuthForm.tsx`: label on the login and register pages
 - `src/features/player/JoinScreen.tsx`: heading on the join page
