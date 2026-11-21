@@ -9,6 +9,7 @@ import {
   DUMMY_HASH, hashPassword, needsRehash, signSession, verifyPassword, verifySession,
 } from '../auth/crypto';
 import { safeEqual } from '../auth/compare';
+import { authRateLimit } from '../auth/rateLimit';
 import type { AppEnv } from '../types';
 
 export const SESSION_COOKIE = 'session';
@@ -89,7 +90,7 @@ export const authRoute = new Hono<AppEnv>();
 /** Lets the register page know whether to ask for an invite code. Public; reveals no secrets. */
 authRoute.get('/config', (c) => c.json({ registration: requiredInviteCode(c) ? 'invite' : 'open' }));
 
-authRoute.post('/register', async (c) => {
+authRoute.post('/register', authRateLimit(), async (c) => {
   const secret = getSecret(c);
   if (!secret) return misconfigured(c);
   const body = RegisterSchema.parse(await c.req.json().catch(() => ({})));
@@ -117,7 +118,7 @@ authRoute.post('/register', async (c) => {
   return c.json({ id, email: body.email, displayName: body.displayName }, 201);
 });
 
-authRoute.post('/login', async (c) => {
+authRoute.post('/login', authRateLimit(), async (c) => {
   const secret = getSecret(c);
   if (!secret) return misconfigured(c);
   const parsed = LoginSchema.safeParse(await c.req.json().catch(() => null));

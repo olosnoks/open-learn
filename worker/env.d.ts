@@ -10,4 +10,6 @@ interface Env {
    * can't create host accounts. Deploy: `npx wrangler secret put REGISTRATION_CODE`.
    */
   REGISTRATION_CODE?: string;
+  /** Rate limiting binding (`ratelimits` in wrangler.jsonc) for the credential endpoints. */
+  AUTH_LIMITER?: RateLimit;
 }

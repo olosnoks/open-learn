@@ -100,7 +100,7 @@ There is no balancing: players choose freely. For fair teams, assign them out lo
 
 ## Known gaps
 
-- No password reset, email verification or login rate limiting. Before making registration public, add a Cloudflare rate limiting rule on `/api/auth/login` and `/api/auth/register`.
+- No password reset or email verification. Login and register are throttled to 1 request per minute per IP by the `AUTH_LIMITER` binding in `wrangler.jsonc`; raise `limit` there if several hosts share one network (a school NAT) and collide.
 - Host control is tied to one browser tab (see above). There is no co-host.
 - Deleting a quiz deletes its game history.
 - `multi_select` has a `partialCredit` flag in its config, but scoring is all-or-nothing today.

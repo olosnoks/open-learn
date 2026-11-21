@@ -103,7 +103,7 @@ Hosts sign in with email and password; players never sign in. Passwords are hash
 
 ## Known gaps
 
-- No password reset, email verification or login rate limiting. Add a Cloudflare rate limiting rule on `/api/auth/login` before opening registration to the public.
+- No password reset or email verification. Login and register are throttled to 1 request per minute per IP (`ratelimits` in `wrangler.jsonc`).
 - Host control uses a per-room `hostToken` kept in `sessionStorage`; only the tab that created the room can run the game.
 - Deleting a quiz also deletes its game history (foreign key cascade).
 - No fallback when WebSockets are blocked (some school and corporate proxies).

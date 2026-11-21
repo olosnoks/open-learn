@@ -101,7 +101,7 @@ npx wrangler secret put REGISTRATION_CODE   # paste any phrase you will hand to 
 
 From then on the register page shows an **Invite code** field and `POST /api/auth/register` answers 403 without the right code. Existing accounts are unaffected. To reopen registration, delete the secret with `npx wrangler secret delete REGISTRATION_CODE`. Locally, leave it out of `.dev.vars` to keep sign-up open, or add it there to test the flow.
 
-Consider also adding a Cloudflare **rate limiting rule** (one is included on the free plan) for `/api/auth/*`, for example 10 requests per minute per IP, to slow down password guessing.
+Login and register are already throttled in the Worker to **1 request per minute per IP** (the `AUTH_LIMITER` binding in `wrangler.jsonc`, free on every plan). A refused attempt gets a 429 with `Retry-After: 60`. If several hosts sign in from one shared network at the same time and collide, raise `limit` (the `period` must be 10 or 60 seconds).
 
 ## 6. Custom domain (optional)
 
