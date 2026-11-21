@@ -19,7 +19,12 @@ A live, host-led quiz game in the style of Kahoot: the host projects a question,
 
 ## Recent additions
 
-_Placeholder: to be filled in after the current feature branches merge._
+- **Game options** when starting a room: shuffle questions, shuffle answers, answers on phones or shapes only, random nicknames, auto-advance
+- **Kahoot-style screens**: coloured shape tiles, QR code in the lobby, projector host view with answer distribution and scoreboard, staged final podium
+- **Question images** by URL, in the editor and the importer (`image` column)
+- **Editor**: reorder, duplicate and delete questions, time and points quick picks, duplicate quiz, unsaved-changes guard
+- **Answer streak bonus** in classic mode (+100 per consecutive correct answer, capped at +500)
+- **Reports**: per-question accuracy with difficult questions flagged, per-player accuracy with "needs help", team breakdown, CSV exports
 
 ## Run it locally in 5 minutes
 
