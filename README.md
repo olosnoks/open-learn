@@ -1,86 +1,108 @@
-# Live Quiz · mscoding.org
+# Live Quiz
 
-A live, host-led quiz game: a React SPA plus a Cloudflare Worker, with one Durable Object per game room.
+A live, host-led quiz game in the style of Kahoot: the host projects a question, players answer on their phones, and the leaderboard updates after every round. It runs on Cloudflare's free tier (Workers, Durable Objects, D1), so a school or a team can run its own copy at no cost.
 
-## Setup
+![Screenshot placeholder: host screen during a question](docs/images/screenshot.png)
+<!-- TODO: add docs/images/screenshot.png -->
+
+## Features
+
+- Rooms with a 6-digit PIN, up to 200 players each
+- Ten question types: multiple choice, multi-select, true/false, type answer, puzzle (ordering), poll, slide, slider, drop pin, scale
+- Three game modes: **classic** (faster answers score more), **accuracy** (correct is full points), **lecture** (no scores)
+- Team mode with 2 to 4 colour teams
+- Quiz editor, plus import from CSV, TSV or JSON (paste straight from Google Sheets or Excel)
+- Host controls: pause, resume, reveal early, kick, end; the room reveals automatically when everyone has answered
+- Players rejoin after a dropped connection or page reload and keep their score
+- Game history with a per-answer CSV export
+- Host accounts with email and password; players never sign in
+
+## Recent additions
+
+_Placeholder: to be filled in after the current feature branches merge._
+
+## Run it locally in 5 minutes
+
+You need Node 20 or newer. Everything runs on your machine: D1 and Durable Objects are emulated by the Cloudflare Vite plugin, no Cloudflare account required.
 
 ```bash
-npm install
-echo "SESSION_SECRET=$(node -e "console.log(crypto.randomBytes(32).toString('hex'))")" > .dev.vars   # if .dev.vars is missing
+git clone <your-fork-url> live-quiz
+cd live-quiz
+npm ci
+node -e "console.log('SESSION_SECRET=' + require('crypto').randomBytes(32).toString('hex'))" > .dev.vars
 npm run db:migrate     # applies drizzle/*.sql to the local D1
-npm run dev            # Vite + Cloudflare plugin, emulating D1 and Durable Objects locally
+npm run dev            # http://localhost:5173
 ```
 
-Open <http://localhost:5173/register> to create a host account, then <http://localhost:5173/quizzes> to create a quiz. Then go to `/host/create` to start a room, and have players join at `/join`.
+1. Open <http://localhost:5173/register> and create a host account.
+2. Go to **Quizzes** and either build a quiz or **Import from spreadsheet** and upload `quizzes/security-plus-practice-set-1.csv`.
+3. **Start a game** (`/host/create`), pick the quiz and a mode, then **Create room**.
+4. In a second browser window (a private window works), open <http://localhost:5173/join>, type the PIN and a nickname.
 
-Local development works with the placeholder `database_id` in `wrangler.jsonc`. Before deploying:
+Details, tests and how to reset local state: [docs/local-development.md](docs/local-development.md).
+
+## Deploy your own on Cloudflare (free)
+
+The short version (full walkthrough with dashboard screens, secrets, custom domain and troubleshooting in [docs/deploy-cloudflare.md](docs/deploy-cloudflare.md)):
 
 ```bash
-npx wrangler d1 create quiz-db         # paste the returned id into wrangler.jsonc
-npx wrangler secret put SESSION_SECRET  # paste a long random value (>= 32 chars)
-npm run db:migrate:remote
-npm run deploy
+npx wrangler login
+npx wrangler d1 create quiz-db          # paste the returned id into database_id in wrangler.jsonc, commit
+npm run db:migrate:remote               # create the tables in your new D1
 ```
 
-## Importing quizzes
+Then in the Cloudflare dashboard: **Workers & Pages → Create application → GitHub**, pick your repo, set the project name to `live-quiz` (it must equal `name` in `wrangler.jsonc`), build command `npm run build`, keep the default deploy command, turn Preview builds off, deploy. Finally set the session secret:
 
-Go to **Quizzes → Import from spreadsheet** (`/quizzes/import`). You can upload a `.csv`, `.tsv` or `.json` file, or paste rows copied from Google Sheets or Excel. The page has a **Download template** button.
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))" | npx wrangler secret put SESSION_SECRET
+```
 
-| Column | Meaning |
+After that, every push to `main` redeploys.
+
+## Documentation
+
+| Document | What it covers |
 | --- | --- |
-| `question` | The question text (required) |
-| `type` | Blank means multiple choice. Others: `multi`, `truefalse`, `type`, `poll`, `puzzle`, `slide` |
-| `answer1` … `answer6` | The answers (for `puzzle`, in the correct order; for `type`, every accepted spelling) |
-| `correct` | The answer **number**: `2`, or `1,3` when several are correct. A letter (`B`) or the answer text also works. Use `true`/`false` for true/false questions |
-| `time` | Seconds (5–240, default 20) |
-| `points` | 0–2000 (default 1000) |
-
-Ready-made question sets live in `quizzes/` (for example `quizzes/security-plus-practice-set-1.csv`); upload one as-is.
-
-You see a preview with the correct answers ticked before anything is saved. Rows with problems are listed with their spreadsheet row number and skipped. The parser is in `src/features/quiz-import/parseQuiz.ts`.
-
-## Schema changes
-
-Edit `worker/db/schema.ts`, then run `npm run db:generate`. That writes the next numbered migration into `drizzle/`, and `npm run db:migrate` applies it.
-
-## Tests
-
-```bash
-npm test               # unit tests (Vitest)
-npx playwright install chromium && npm run test:e2e   # starts the dev server itself (PORT=5174 to use another port)
-```
-
-On Windows, if every Vitest suite fails with `Cannot read properties of undefined (reading 'config')`, the shell's working directory has a lowercase drive letter (`c:\…`). `cd C:\path\to\repo` and run it again.
+| [docs/local-development.md](docs/local-development.md) | Prerequisites, `.dev.vars`, tests, how D1 and Durable Objects are emulated, resetting state |
+| [docs/deploy-cloudflare.md](docs/deploy-cloudflare.md) | Step-by-step Cloudflare deployment, secrets, custom domain, day-two operations, limits, troubleshooting |
+| [docs/architecture.md](docs/architecture.md) | Diagram, request and WebSocket flow, what lives in the Durable Object vs D1, phases, scoring, auth design, adding a question type |
+| [docs/customizing.md](docs/customizing.md) | Branding, domain, making quizzes, game modes, team mode, known gaps and roadmap |
+| [docs/importing-quizzes.md](docs/importing-quizzes.md) | The spreadsheet and JSON import formats with an example of every question type |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Branch, test, pull request |
 
 ## Routes
 
 | Path | Who | What |
 | --- | --- | --- |
-| `/quizzes`, `/quizzes/new`, `/quizzes/:id` | host | Quiz editor |
+| `/quizzes`, `/quizzes/new`, `/quizzes/:id` | host | Quiz list and editor |
+| `/quizzes/import` | host | Import from CSV, TSV or JSON |
 | `/host/create` | host | Pick a quiz and mode, then create a room |
 | `/host/:sessionId/:code[/game]` | host | Lobby and live game controls |
 | `/sessions`, `/sessions/:id` | host | History, results, CSV export |
 | `/join[/:code]`, `/play/:code` | player | Join and play |
-| `/login`, `/register` | host | Sign in / create a host account. Host routes redirect here when signed out |
+| `/login`, `/register` | host | Sign in or create a host account; host routes redirect here when signed out |
+| `/api/*`, `/ws/room/:code` | both | JSON API and the per-room WebSocket (see [architecture](docs/architecture.md)) |
 
-## Auth
+## Auth in brief
 
-Hosts sign in with email + password (`/register`, `/login`). Players never sign in.
+Hosts sign in with email and password; players never sign in. Passwords are hashed with PBKDF2-SHA256 (30,000 iterations, chosen to fit the free plan's 10 ms CPU budget). Sessions are stateless HMAC-signed cookies keyed by the `SESSION_SECRET` secret; if it is missing or shorter than 32 characters, auth endpoints return 500 and log why. Non-GET `/api/*` requests from a different origin are rejected. Full details and the reasoning: [docs/architecture.md](docs/architecture.md#auth-design).
 
-- **API:** `POST /api/auth/register` `{email, password, displayName}`, `POST /api/auth/login` `{email, password}`, `POST /api/auth/logout`, `GET /api/auth/me`. `/api/quizzes/*`, `/api/sessions/*` and `/api/auth/me` require a session (`requireAuth` in `worker/api/auth.ts`).
-- **Passwords:** PBKDF2-SHA256 via WebCrypto, 16-byte random salt, stored in `users.password_hash` as `pbkdf2$<iterations>$<saltB64>$<hashB64>`. The iteration count is **30,000**. Workers caps PBKDF2 at 100k, and the Free plan gives 10 ms CPU per request. 100k measured ~12 ms on a fast desktop, so it would blow the budget on its own. 30k is ~3.5 ms, which leaves headroom for slower edge CPUs. That is well below OWASP's 600k recommendation; on a paid plan raise `PBKDF2_ITERATIONS` in `worker/auth/crypto.ts` (max 100k). Existing hashes keep working and are upgraded on the user's next login.
-- **Sessions:** stateless HMAC-SHA256-signed cookie `session=v1.<base64url {u: userId, e: expiryMs}>.<base64url sig>`, `HttpOnly; SameSite=Lax; Path=/; Max-Age=30 days`, plus `Secure` over https. The key is the `SESSION_SECRET` secret (`.dev.vars` locally, `npx wrangler secret put SESSION_SECRET` in production). If it is missing or shorter than 32 characters, auth endpoints return 500 and log why. Logout only clears the cookie; there is no server-side revocation. Rotating `SESSION_SECRET` signs everyone out.
-- **CSRF:** non-GET `/api/*` requests with an `Origin` header that doesn't match the host are rejected with 403; `SameSite=Lax` covers the rest.
-- The seeded `dev-user` row (password hash `!`) can't log in.
-## Free-tier constraints
+**Roadmap note:** account creation is planned to move to Microsoft SSO (Entra ID). Treat the password flow as temporary and do not build on it.
 
-- Worker CPU: 10 ms per request, so keep the Worker thin.
-- Durable Objects use the SQLite backend only (`new_sqlite_classes`).
+## Free-tier constraints that shape the code
+
+- Worker CPU is 10 ms per request on the free plan, so the Worker stays thin and the password hash iteration count is capped.
+- Durable Objects use the SQLite backend only (`new_sqlite_classes` in `wrangler.jsonc`).
 - WebSocket Hibernation is required (`ctx.acceptWebSocket`). Per-socket identity lives in `serializeAttachment`, so it survives hibernation.
-- Live answers stay in DO SQLite. D1 holds only quiz content, session summaries and per-answer export rows, all written once when the game ends.
+- Live answers stay in the room's own SQLite. D1 holds quiz content, session summaries and per-answer export rows, written once when a game ends.
 
 ## Known gaps
 
-- No password reset, email verification or login rate limiting yet. Consider Cloudflare rate limiting rules on `/api/auth/login` before going public.
-- Host control uses a per-room `hostToken` kept in `sessionStorage`. Only the tab that created the room can run the game.
-- Deleting a quiz also deletes its game history (FK cascade).
+- No password reset, email verification or login rate limiting. Add a Cloudflare rate limiting rule on `/api/auth/login` before opening registration to the public.
+- Host control uses a per-room `hostToken` kept in `sessionStorage`; only the tab that created the room can run the game.
+- Deleting a quiz also deletes its game history (foreign key cascade).
+- No fallback when WebSockets are blocked (some school and corporate proxies).
+
+## License
+
+License: not yet chosen.
