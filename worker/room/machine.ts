@@ -9,6 +9,7 @@ export type StoredQuestion = {
   timeLimitSec: number;
   points: number;
   config: QuestionConfig;
+  imageUrl?: string | null;
 };
 
 /** Question types that never award points or affect streaks. */
@@ -44,6 +45,7 @@ export function toWireQuestion(q: StoredQuestion, index: number): WireQuestion {
   return {
     id: q.id, index, type: q.type, prompt: q.prompt,
     timeLimitSec: q.timeLimitSec, points: q.points, config: publicConfig(q.config),
+    ...(q.imageUrl ? { imageUrl: q.imageUrl } : {}),
   };
 }
 

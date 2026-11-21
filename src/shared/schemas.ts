@@ -56,6 +56,25 @@ export const QuestionConfigSchema = z.discriminatedUnion('type', [
 
 export type QuestionConfig = z.infer<typeof QuestionConfigSchema>;
 
+/**
+ * Per-game options chosen by the host when creating a room (Kahoot's "game options").
+ * Stored in game_sessions.settings_json and sent to every client in GameSnapshot.settings.
+ */
+export const RoomSettingsSchema = z.object({
+  /** Play questions in a random order (slides keep their relative position is NOT required). */
+  shuffleQuestions: z.boolean().default(false),
+  /** Shuffle answer order for quiz / multi_select / poll questions, per game. */
+  shuffleAnswers: z.boolean().default(false),
+  /** false = players see only the four coloured shapes (classic Kahoot); true = answer text on phones too. */
+  showAnswersOnDevices: z.boolean().default(true),
+  /** Players get a random friendly nickname instead of typing their own. */
+  nicknameGenerator: z.boolean().default(false),
+  /** Room advances through reveal and scoreboard on its own, so the host can sit back. */
+  autoAdvance: z.boolean().default(false),
+});
+export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = RoomSettingsSchema.parse({});
+
 // The room code is carried by the WebSocket URL (/ws/room/:code), so JOIN doesn't repeat it.
 export const JoinPayloadSchema = z.object({
   type: z.literal('JOIN'),

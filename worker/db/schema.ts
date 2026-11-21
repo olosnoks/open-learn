@@ -28,6 +28,7 @@ export const questions = sqliteTable('questions', {
   timeLimitSec: integer('time_limit_sec').notNull().default(20),
   points: integer('points').notNull().default(1000),
   config: text('config').notNull(),
+  imageUrl: text('image_url'),
 }, (t) => ({
   quizIdx: index('idx_questions_quiz').on(t.quizId),
 }));
@@ -38,6 +39,8 @@ export const gameSessions = sqliteTable('game_sessions', {
   hostId: text('host_id').notNull().references(() => users.id),
   roomCode: text('room_code').notNull().unique(),
   mode: text('mode').notNull().default('classic'),
+  /** RoomSettings as JSON (see src/shared/schemas.ts). Null = defaults. */
+  settingsJson: text('settings_json'),
   startedAt: integer('started_at'),
   endedAt: integer('ended_at'),
   summaryJson: text('summary_json'),

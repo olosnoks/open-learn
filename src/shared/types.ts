@@ -1,4 +1,5 @@
-import type { QuestionConfig } from './schemas';
+import type { QuestionConfig, RoomSettings } from './schemas';
+export type { RoomSettings } from './schemas';
 
 export type QuestionType = QuestionConfig['type'];
 
@@ -22,6 +23,8 @@ export type WireQuestion = {
   timeLimitSec: number;
   points: number;
   config: PublicConfig;
+  /** Optional picture shown with the question (host screen always; player screens when there is room). */
+  imageUrl?: string;
 };
 
 export type PlayerRow = {
@@ -54,6 +57,8 @@ export type GamePhase = 'lobby' | 'countdown' | 'question' | 'reveal' | 'scorebo
 
 export type GameSnapshot = {
   phase: GamePhase;
+  /** Game options for this room; present on every WELCOME / RECONNECTED. */
+  settings: RoomSettings;
   currentIndex: number;
   total: number;
   serverTime: number;

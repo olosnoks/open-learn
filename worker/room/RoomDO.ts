@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { ClientEventSchema } from '../../src/shared/schemas';
+import { ClientEventSchema, DEFAULT_ROOM_SETTINGS, type RoomSettings } from '../../src/shared/schemas';
 import { classicScoring, accuracyScoring } from './scoring';
 import {
   evaluateAnswer, getCorrectAnswer, rankEntries, toWireQuestion, UNSCORED_TYPES, type StoredQuestion,
@@ -19,6 +19,7 @@ type InitPayload = {
   mode: Mode;
   isTeam: boolean;
   teamCount?: number;
+  settings?: Partial<RoomSettings>;
   questions: StoredQuestion[];
 };
 
@@ -30,6 +31,7 @@ type GameState = {
   mode: Mode;
   isTeam: boolean;
   teamCount: number;
+  settings: RoomSettings;
   phase: GamePhase;
   currentIndex: number;
   questions: StoredQuestion[];
@@ -118,6 +120,7 @@ export class RoomDO extends DurableObject<Env> {
       sessionId: payload.sessionId, hostId: payload.hostId, hostToken: payload.hostToken,
       roomCode: payload.roomCode, mode: payload.mode, isTeam: payload.isTeam,
       teamCount: payload.teamCount ?? 2,
+      settings: { ...DEFAULT_ROOM_SETTINGS, ...(payload.settings ?? {}) },
       phase: 'lobby', currentIndex: 0, questions: payload.questions,
       questionStartedAt: 0, endsAt: 0, hostPausedAt: null,
     });
@@ -492,6 +495,7 @@ export class RoomDO extends DurableObject<Env> {
       currentIndex: state.currentIndex,
       total: state.questions.length,
       serverTime: Date.now(),
+      settings: state.settings ?? DEFAULT_ROOM_SETTINGS,
     };
     if (state.phase === 'question' || state.phase === 'reveal') {
       const q = state.questions[state.currentIndex];
