@@ -1,15 +1,10 @@
+import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import type { QuestionType } from '../../shared/schemas';
+import { isValidImageUrl, POINTS_PRESETS, TIME_PRESETS, type EditorQuestion } from './questionList';
 
-export type EditorQuestion = {
-  id?: string;
-  type: QuestionType;
-  prompt: string;
-  timeLimitSec: number;
-  points: number;
-  config: any;
-};
+export type { EditorQuestion } from './questionList';
 
 const TYPE_LABELS: Record<QuestionType, string> = {
   quiz: 'Quiz (single answer)',
@@ -117,16 +112,41 @@ export function QuestionForm({
           placeholder="Ask your question"
         />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <ImageUrlField
+        value={question.imageUrl ?? ''}
+        onChange={(imageUrl) => onChange({ ...question, imageUrl })}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor="q-time" className="mb-1 block text-sm font-semibold text-ink-muted">Time limit (s)</label>
           <Input id="q-time" type="number" min={5} max={240} value={question.timeLimitSec}
             onChange={(e) => onChange({ ...question, timeLimitSec: Number(e.target.value) || 20 })} />
+          <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Time presets">
+            {TIME_PRESETS.map((s) => (
+              <Button key={s} size="sm" type="button"
+                variant={question.timeLimitSec === s ? 'primary' : 'secondary'}
+                aria-pressed={question.timeLimitSec === s}
+                aria-label={`${s} seconds`}
+                onClick={() => onChange({ ...question, timeLimitSec: s })}>
+                {s}s
+              </Button>
+            ))}
+          </div>
         </div>
         <div>
           <label htmlFor="q-points" className="mb-1 block text-sm font-semibold text-ink-muted">Points</label>
           <Input id="q-points" type="number" min={0} max={2000} value={question.points}
             onChange={(e) => onChange({ ...question, points: Number(e.target.value) || 0 })} />
+          <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Score presets">
+            {POINTS_PRESETS.map((p) => (
+              <Button key={p.value} size="sm" type="button"
+                variant={question.points === p.value ? 'primary' : 'secondary'}
+                aria-pressed={question.points === p.value}
+                onClick={() => onChange({ ...question, points: p.value })}>
+                {p.label} · {p.value}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
       <hr className="border-brand-200" />
@@ -319,5 +339,45 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
       <span className="mb-1 block text-sm font-semibold text-ink-muted">{label}</span>
       <Input type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
+  );
+}
+
+/**
+ * Optional picture for the question, by https URL only (no uploads to pay for). Shows a
+ * live thumbnail once the URL is valid and the browser could load it.
+ */
+function ImageUrlField({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+  const [broken, setBroken] = useState(false);
+  const trimmed = value.trim();
+  const valid = isValidImageUrl(trimmed);
+  return (
+    <div>
+      <label htmlFor="q-image" className="mb-1 block text-sm font-semibold text-ink-muted">
+        Image (optional)
+      </label>
+      <div className="flex gap-2">
+        <Input id="q-image" type="url" inputMode="url" value={value} aria-label="Question image URL"
+          aria-invalid={!valid}
+          placeholder="https://example.com/picture.jpg"
+          onChange={(e) => { setBroken(false); onChange(e.target.value); }} />
+        {trimmed && (
+          <Button variant="ghost" aria-label="Clear image" onClick={() => { setBroken(false); onChange(''); }}>×</Button>
+        )}
+      </div>
+      {!valid && (
+        <p role="alert" className="mt-1 text-sm text-[var(--danger)]">Image links must start with https://</p>
+      )}
+      {valid && trimmed && (
+        <div className="mt-2 flex items-center gap-3">
+          {broken ? (
+            <p className="text-sm text-ink-muted">Couldn't load that image. Check the link is public.</p>
+          ) : (
+            <img src={trimmed} alt="Question image preview" key={trimmed}
+              className="max-h-32 max-w-xs rounded-tile border border-brand-200 object-contain"
+              onError={() => setBroken(true)} />
+          )}
+        </div>
+      )}
+    </div>
   );
 }

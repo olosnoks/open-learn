@@ -9,7 +9,7 @@ type ApiQuiz = {
   id: string;
   title: string;
   description: string | null;
-  questions: { type: string; prompt: string; timeLimitSec: number; points: number; config: any }[];
+  questions: { type: string; prompt: string; timeLimitSec: number; points: number; config: any; imageUrl: string | null }[];
 };
 
 const threeQuestionQuiz = (title: string): QuizInput => ({
@@ -151,8 +151,12 @@ test('edit: rename and remove a question, then save', async ({ browser }) => {
 
   await questionTab(page, 2).click();
   await expect(page.getByLabel('Prompt')).toHaveValue('Drop me');
+  // Deleting a question asks first; the prompt names the question.
+  let removeMessage = '';
+  page.once('dialog', (d) => { removeMessage = d.message(); void d.accept(); });
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(questionTabs(page)).toHaveCount(2);
+  expect(removeMessage).toContain('Drop me');
   await expect(page.getByRole('button', { name: /Drop me/ })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -251,4 +255,121 @@ test("a second host can't see or touch the first host's quiz", async ({ browser 
   const after = await owner.context.request.get(`/api/quizzes/${quizId}`);
   expect(after.status()).toBe(200);
   expect(((await after.json()) as ApiQuiz).title).toBe(title);
+});
+
+test('image URL, quick picks, reorder and duplicate persist', async ({ browser }) => {
+  const { context, page } = await registerHost(browser);
+  const quizId = await createQuiz(context, threeQuestionQuiz(`E2E manage ${Date.now()}`));
+  const image = 'https://placehold.co/300x200.png';
+
+  await page.goto(`/quizzes/${quizId}`);
+  await expect(questionTabs(page)).toHaveCount(3);
+
+  // Q1: image by URL (https only), with a preview and a clear button; quick picks for time and points.
+  const imageInput = page.getByLabel('Question image URL');
+  await imageInput.fill('http://insecure.example/pic.png');
+  await expect(page.getByRole('alert')).toContainText('https://');
+  await imageInput.fill(image);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByAltText('Question image preview')).toHaveAttribute('src', image);
+  await page.getByRole('button', { name: 'Clear image' }).click();
+  await expect(imageInput).toHaveValue('');
+  await imageInput.fill(image);
+  await page.getByRole('button', { name: '60 seconds' }).click();
+  await expect(page.getByLabel('Time limit (s)')).toHaveValue('60');
+  await page.getByRole('button', { name: /^Double/ }).click();
+  await expect(page.getByLabel('Points')).toHaveValue('2000');
+  await expect(questionTab(page, 1)).toContainText('60s · 2000 pts');
+
+  // Move Q3 ("Keep me 2") to the top, then duplicate the new Q2 ("Keep me 1").
+  await page.getByRole('button', { name: 'Move question 3 up' }).click();
+  await page.getByRole('button', { name: 'Move question 2 up' }).click();
+  await expect(questionTab(page, 1)).toContainText('Keep me 2');
+  await expect(questionTab(page, 2)).toContainText('Keep me 1');
+  await expect(page.getByRole('button', { name: 'Move question 1 up' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Duplicate question 2' }).click();
+  await expect(questionTabs(page)).toHaveCount(4);
+  await expect(questionTab(page, 3)).toContainText('Keep me 1');
+  await expect(page.getByRole('heading', { name: 'Question 3' })).toBeVisible();
+
+  // Jump-to and collapse.
+  await page.getByLabel('Jump to question').selectOption('0');
+  await expect(page.getByRole('heading', { name: 'Question 1' })).toBeVisible();
+  await page.getByRole('button', { name: 'Collapse list' }).click();
+  await expect(page.getByRole('button', { name: 'Move question 1 up' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Expand list' }).click();
+  await expect(page.getByRole('button', { name: 'Move question 1 up' })).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page).toHaveURL(/\/quizzes$/);
+
+  const quiz = (await (await context.request.get(`/api/quizzes/${quizId}`)).json()) as ApiQuiz;
+  expect(quiz.questions.map((q) => q.prompt)).toEqual(['Keep me 2', 'Keep me 1', 'Keep me 1', 'Drop me']);
+  expect(quiz.questions.map((q) => q.imageUrl)).toEqual([null, image, image, null]);
+  expect(quiz.questions[1]).toMatchObject({ timeLimitSec: 60, points: 2000 });
+  expect(quiz.questions[2]).toMatchObject({ timeLimitSec: 60, points: 2000 });
+});
+
+test('the API rejects non-https image URLs', async ({ browser }) => {
+  const { context } = await registerHost(browser);
+  const body = threeQuestionQuiz(`E2E bad image ${Date.now()}`);
+  body.questions[0] = { ...body.questions[0], imageUrl: 'http://insecure.example/pic.png' } as never;
+  const res = await context.request.post('/api/quizzes', { data: body });
+  expect(res.status()).toBe(400);
+  expect(await res.text()).toContain('https');
+});
+
+test('unsaved changes: leaving via the nav asks first', async ({ browser }) => {
+  const { page } = await registerHost(browser);
+  await page.goto('/quizzes/new');
+  await expect(page.getByTestId('unsaved-badge')).toHaveCount(0);
+  await page.getByLabel('Quiz title').fill('Half done');
+  await expect(page.getByTestId('unsaved-badge')).toBeVisible();
+
+  // Cancel keeps the draft on screen.
+  page.once('dialog', (d) => void d.dismiss());
+  await page.getByRole('link', { name: 'Quizzes' }).click();
+  await expect(page).toHaveURL(/\/quizzes\/new$/);
+  await expect(page.getByLabel('Quiz title')).toHaveValue('Half done');
+
+  // Accept leaves.
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('link', { name: 'Quizzes' }).click();
+  await expect(page).toHaveURL(/\/quizzes$/);
+});
+
+test('quiz list: question count, duplicate and delete', async ({ browser }) => {
+  const { context, page } = await registerHost(browser);
+  const title = `E2E list ${Date.now()}`;
+  const quizId = await createQuiz(context, threeQuestionQuiz(title));
+
+  await page.goto('/quizzes');
+  const card = page.getByRole('listitem').filter({ hasText: title });
+  await expect(card).toContainText('3 questions');
+  await expect(card).toContainText('Updated Just now');
+
+  // Duplicate copies questions and opens the copy.
+  await card.getByRole('button', { name: 'Duplicate' }).click();
+  await expect(page).toHaveURL(/\/quizzes\/[0-9a-f-]{36}$/);
+  const copyId = page.url().split('/').pop()!;
+  expect(copyId).not.toBe(quizId);
+  await expect(page.getByLabel('Quiz title')).toHaveValue(`${title} (copy)`);
+  await expect(questionTabs(page)).toHaveCount(3);
+  const copy = (await (await context.request.get(`/api/quizzes/${copyId}`)).json()) as ApiQuiz;
+  expect(copy.questions.map((q) => q.prompt)).toEqual(['Keep me 1', 'Drop me', 'Keep me 2']);
+
+  // Delete the copy from the list, with confirmation.
+  await page.goto('/quizzes');
+  await expect(page.getByRole('listitem')).toHaveCount(2);
+  let message = '';
+  page.once('dialog', (d) => { message = d.message(); void d.accept(); });
+  await page.getByRole('listitem').filter({ hasText: `${title} (copy)` }).getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByRole('listitem')).toHaveCount(1);
+  expect(message).toContain('(copy)');
+  expect((await context.request.get(`/api/quizzes/${copyId}`)).status()).toBe(404);
+  expect((await context.request.get(`/api/quizzes/${quizId}`)).status()).toBe(200);
+
+  // Another host can't duplicate it.
+  const other = await registerHost(browser);
+  expect((await other.context.request.post(`/api/quizzes/${quizId}/duplicate`, { data: {} })).status()).toBe(404);
 });
