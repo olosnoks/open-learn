@@ -8,6 +8,7 @@ import { users } from '../db/schema';
 import {
   DUMMY_HASH, hashPassword, needsRehash, signSession, verifyPassword, verifySession,
 } from '../auth/crypto';
+import { safeEqual } from '../auth/compare';
 import type { AppEnv } from '../types';
 
 export const SESSION_COOKIE = 'session';
@@ -76,15 +77,26 @@ const RegisterSchema = z.object({
   email,
   password,
   displayName: z.string().trim().min(1).max(40),
+  inviteCode: z.string().trim().max(128).optional(),
 });
+
+/** The invite code this deployment requires for registration, or null when registration is open. */
+const requiredInviteCode = (c: Context<AppEnv>): string | null => c.env.REGISTRATION_CODE?.trim() || null;
 const LoginSchema = z.object({ email, password: z.string().min(1).max(128) });
 
 export const authRoute = new Hono<AppEnv>();
+
+/** Lets the register page know whether to ask for an invite code. Public; reveals no secrets. */
+authRoute.get('/config', (c) => c.json({ registration: requiredInviteCode(c) ? 'invite' : 'open' }));
 
 authRoute.post('/register', async (c) => {
   const secret = getSecret(c);
   if (!secret) return misconfigured(c);
   const body = RegisterSchema.parse(await c.req.json().catch(() => ({})));
+  const required = requiredInviteCode(c);
+  if (required && !safeEqual(body.inviteCode ?? '', required)) {
+    return c.json({ error: 'Registration needs a valid invite code' }, 403);
+  }
   const db = getDb(c.env);
 
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, body.email)).limit(1);

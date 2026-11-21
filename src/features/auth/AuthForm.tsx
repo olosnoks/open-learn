@@ -1,18 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { HostShell } from '../../components/layout/HostShell';
 import { BrandMark } from '../../components/game/AnswerShapeLogo';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
-import { login, register, safeNext } from '../../lib/api';
+import { authConfig, login, register, safeNext } from '../../lib/api';
 
-type Field = 'email' | 'password' | 'displayName';
+type Field = 'email' | 'password' | 'displayName' | 'inviteCode';
 
 const FIELDS: Record<Field, { label: string; type: string; autoComplete: Record<'login' | 'register', string> }> = {
   displayName: { label: 'Display name', type: 'text', autoComplete: { login: 'nickname', register: 'nickname' } },
   email: { label: 'Email', type: 'email', autoComplete: { login: 'email', register: 'email' } },
   password: { label: 'Password', type: 'password', autoComplete: { login: 'current-password', register: 'new-password' } },
+  inviteCode: { label: 'Invite code', type: 'text', autoComplete: { login: 'off', register: 'off' } },
 };
 
 /** Shared card for LoginPage and RegisterPage. */
@@ -20,12 +21,21 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = safeNext(params.get('next'));
-  const [values, setValues] = useState<Record<Field, string>>({ email: '', password: '', displayName: '' });
+  const [values, setValues] = useState<Record<Field, string>>({ email: '', password: '', displayName: '', inviteCode: '' });
+  const [needsInvite, setNeedsInvite] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const isRegister = mode === 'register';
-  const fields: Field[] = isRegister ? ['displayName', 'email', 'password'] : ['email', 'password'];
+  useEffect(() => {
+    if (!isRegister) return;
+    let cancelled = false;
+    authConfig().then((cfg) => { if (!cancelled) setNeedsInvite(cfg.registration === 'invite'); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isRegister]);
+  const fields: Field[] = isRegister
+    ? ['displayName', 'email', 'password', ...(needsInvite ? (['inviteCode'] as Field[]) : [])]
+    : ['email', 'password'];
   const otherHref = `${isRegister ? '/login' : '/register'}${next !== '/quizzes' ? `?next=${encodeURIComponent(next)}` : ''}`;
 
   const submit = async (e: React.FormEvent) => {
@@ -33,7 +43,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     setError(null);
     setBusy(true);
     try {
-      if (isRegister) await register(values.email, values.password, values.displayName);
+      if (isRegister) await register(values.email, values.password, values.displayName, values.inviteCode || undefined);
       else await login(values.email, values.password);
       navigate(next, { replace: true });
     } catch (err) {
@@ -61,11 +71,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
                   id={`auth-${f}`} name={f} type={FIELDS[f].type} required
                   autoComplete={FIELDS[f].autoComplete[mode]}
                   minLength={f === 'password' && isRegister ? 8 : undefined}
-                  maxLength={f === 'displayName' ? 40 : f === 'password' ? 128 : 254}
+                  maxLength={f === 'displayName' ? 40 : f === 'password' ? 128 : f === 'inviteCode' ? 128 : 254}
                   value={values[f]}
                   onChange={(e) => setValues((v) => ({ ...v, [f]: e.target.value }))}
                 />
                 {f === 'password' && isRegister && <p className="mt-1 text-xs text-ink-muted">At least 8 characters.</p>}
+                {f === 'inviteCode' && <p className="mt-1 text-xs text-ink-muted">This site is invite-only. Ask the owner for the code.</p>}
               </div>
             ))}
             {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}

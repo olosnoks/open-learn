@@ -91,6 +91,18 @@ or set it in the dashboard: your Worker, **Settings**, **Variables & Secrets**, 
 
 Either way the change is live within seconds. Open `/register` on your URL and create the first host account.
 
+### Step 6: close registration to strangers
+
+Hosts are the only users who can write to your database (quizzes, questions, game history), so once you have your own account, require an invite code for further sign-ups:
+
+```bash
+npx wrangler secret put REGISTRATION_CODE   # paste any phrase you will hand to colleagues
+```
+
+From then on the register page shows an **Invite code** field and `POST /api/auth/register` answers 403 without the right code. Existing accounts are unaffected. To reopen registration, delete the secret with `npx wrangler secret delete REGISTRATION_CODE`. Locally, leave it out of `.dev.vars` to keep sign-up open, or add it there to test the flow.
+
+Consider also adding a Cloudflare **rate limiting rule** (one is included on the free plan) for `/api/auth/*`, for example 10 requests per minute per IP, to slow down password guessing.
+
 ## 6. Custom domain (optional)
 
 The domain's DNS zone must be in the **same Cloudflare account** as the Worker.

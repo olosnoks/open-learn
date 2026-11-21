@@ -90,8 +90,12 @@ async function authPost(path: string, body: unknown): Promise<Me> {
 
 export const login = (email: string, password: string) => authPost('/login', { email, password });
 
-export const register = (email: string, password: string, displayName: string) =>
-  authPost('/register', { email, password, displayName });
+export const register = (email: string, password: string, displayName: string, inviteCode?: string) =>
+  authPost('/register', { email, password, displayName, ...(inviteCode ? { inviteCode } : {}) });
+
+/** Whether this deployment asks for an invite code at registration. */
+export const authConfig = (): Promise<{ registration: 'open' | 'invite' }> =>
+  fetch('/api/auth/config').then((r) => (r.ok ? r.json() : { registration: 'open' }));
 
 export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST' });

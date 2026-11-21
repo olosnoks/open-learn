@@ -15,7 +15,7 @@ A live, host-led quiz game in the style of Kahoot: the host projects a question,
 - Host controls: pause, resume, reveal early, kick, end; the room reveals automatically when everyone has answered
 - Players rejoin after a dropped connection or page reload and keep their score
 - Game history with a per-answer CSV export
-- Host accounts with email and password; players never sign in
+- Host accounts with email and password; players never sign in. Set a `REGISTRATION_CODE` secret to make sign-up invite-only
 
 ## Recent additions
 
