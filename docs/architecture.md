@@ -1,6 +1,6 @@
 # Architecture
 
-Live Quiz is three pieces: a React single-page app, a thin Cloudflare Worker that serves it and handles the JSON API, and one Durable Object per game room that owns everything live. D1 (Cloudflare's SQLite database) stores accounts, quiz content and finished-game history.
+OpenLearn is three pieces: a React single-page app, a thin Cloudflare Worker that serves it and handles the JSON API, and one Durable Object per game room that owns everything live. D1 (Cloudflare's SQLite database) stores accounts, quiz content and finished-game history.
 
 ```mermaid
 flowchart LR

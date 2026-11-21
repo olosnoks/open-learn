@@ -47,7 +47,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
       <div className="m-auto w-full max-w-md motion-safe:animate-fade-up">
         <div className="mb-6 flex flex-col items-center text-center">
           <BrandMark className="h-12 w-12" />
-          <p className="mt-3 text-sm font-semibold uppercase tracking-widest text-brand-300">Live Quiz</p>
+          <p className="mt-3 text-sm font-semibold uppercase tracking-widest text-brand-300">OpenLearn</p>
           <h1 className="mt-1 font-display text-4xl font-bold">{isRegister ? 'Create your host account' : 'Host log in'}</h1>
         </div>
         <Card className="bg-cream text-ink">

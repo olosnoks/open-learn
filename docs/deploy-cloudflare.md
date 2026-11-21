@@ -1,6 +1,6 @@
 # Deploy your own copy on Cloudflare
 
-This walks through deploying Live Quiz to your own Cloudflare account using Workers Builds (Cloudflare builds and deploys from your GitHub repository on every push). Everything fits in the free plan. The sequence below was run end to end against this repository's configuration.
+This walks through deploying OpenLearn to your own Cloudflare account using Workers Builds (Cloudflare builds and deploys from your GitHub repository on every push). Everything fits in the free plan. The sequence below was run end to end against this repository's configuration.
 
 You need:
 
@@ -14,9 +14,9 @@ Placeholders used below: `<your-github-user>`, `<database-id>`, `<your-domain>`.
 Fork this repository on GitHub, or clone it and push to a new repository you own:
 
 ```bash
-git clone <original-repo-url> live-quiz
-cd live-quiz
-git remote set-url origin https://github.com/<your-github-user>/live-quiz.git
+git clone <original-repo-url> open-learn
+cd open-learn
+git remote set-url origin https://github.com/<your-github-user>/open-learn.git
 git push -u origin main
 ```
 
@@ -69,7 +69,7 @@ Why from your machine: the token Workers Builds generates for itself has no D1 p
 ## 4. Connect the repository in the Cloudflare dashboard
 
 1. Open the Cloudflare dashboard, go to **Workers & Pages**, click **Create application**.
-2. Choose the **GitHub** tab (import a repository). Authorize the Cloudflare GitHub app for your account or organization when asked, then pick your `live-quiz` repository.
+2. Choose the **GitHub** tab (import a repository). Authorize the Cloudflare GitHub app for your account or organization when asked, then pick your `open-learn` repository.
 3. **Project name:** `live-quiz`. This **must equal** `name` in `wrangler.jsonc`. If you want a different Worker name, change both.
 4. **Build command:** `npm run build`
 5. **Deploy command:** leave the default, `npx wrangler deploy`. The Cloudflare Vite plugin writes `dist/live_quiz/wrangler.json` plus a redirect file in `.wrangler/deploy/`, so Wrangler deploys the built Worker from `dist/live_quiz` and the static site from `dist/client` without any extra flags.

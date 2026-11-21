@@ -11,8 +11,8 @@ Everything runs on your machine. The Cloudflare Vite plugin starts the Worker in
 ## First run
 
 ```bash
-git clone <your-fork-url> live-quiz
-cd live-quiz
+git clone <your-fork-url> open-learn
+cd open-learn
 npm ci
 ```
 

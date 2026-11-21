@@ -77,7 +77,7 @@ export function JoinScreen() {
     <PlayerShell>
       <header className="mb-6 flex flex-col items-center text-center motion-safe:animate-fade-up">
         <BrandMark className="h-14 w-14" />
-        <h1 className="mt-3 font-display text-4xl font-bold text-brand-700">Live Quiz</h1>
+        <h1 className="mt-3 font-display text-4xl font-bold text-brand-700">OpenLearn</h1>
       </header>
       <Card className="motion-safe:animate-fade-up" style={{ animationDelay: '80ms' }}>
         <form onSubmit={join} className="space-y-5">

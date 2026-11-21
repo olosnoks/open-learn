@@ -1,4 +1,4 @@
-# Live Quiz
+# OpenLearn
 
 A live, host-led quiz game in the style of Kahoot: the host projects a question, players answer on their phones, and the leaderboard updates after every round. It runs on Cloudflare's free tier (Workers, Durable Objects, D1), so a school or a team can run its own copy at no cost.
 
@@ -31,8 +31,8 @@ A live, host-led quiz game in the style of Kahoot: the host projects a question,
 You need Node 20 or newer. Everything runs on your machine: D1 and Durable Objects are emulated by the Cloudflare Vite plugin, no Cloudflare account required.
 
 ```bash
-git clone <your-fork-url> live-quiz
-cd live-quiz
+git clone <your-fork-url> open-learn
+cd open-learn
 npm ci
 node -e "console.log('SESSION_SECRET=' + require('crypto').randomBytes(32).toString('hex'))" > .dev.vars
 npm run db:migrate     # applies drizzle/*.sql to the local D1

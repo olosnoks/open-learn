@@ -31,7 +31,7 @@ export function HostShell({ children, nav = true, wide = false }: { children: Re
         <nav className={cn('mx-auto flex flex-wrap items-center gap-x-6 gap-y-3 px-6 pt-5 text-sm font-semibold md:px-8', width)}>
           <span className="mr-auto inline-flex items-center gap-2 uppercase tracking-widest text-brand-300">
             <BrandMark className="h-5 w-5" />
-            Live Quiz
+            OpenLearn
           </span>
           {links.map((l) => (
             <NavLink key={l.to} to={l.to} end
