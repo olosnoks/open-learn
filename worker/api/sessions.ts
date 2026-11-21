@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { and, asc, desc, eq } from 'drizzle-orm';
+import { count, countDistinct, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client';
 import { quizzes, questions, gameSessions, sessionAnswers } from '../db/schema';
@@ -74,13 +75,65 @@ sessionsRoute.post('/', async (c) => {
   return c.json({ sessionId, roomCode, hostToken }, 201);
 });
 
+/** Question types that never award points; excluded from accuracy (mirrors UNSCORED_TYPES). */
+const UNSCORED_TYPES = ['poll', 'slide', 'scale'];
+
+/**
+ * GET /api/sessions — history list, newest first. Two queries total (no N+1):
+ * sessions joined to their quiz title, and one aggregate over session_answers for the
+ * host's sessions. Player count / team flag come from summary_json via SQLite JSON1.
+ */
 sessionsRoute.get('/', async (c) => {
   const db = getDb(c.env);
-  return c.json(
-    await db.select().from(gameSessions)
-      .where(eq(gameSessions.hostId, c.get('userId')))
-      .orderBy(desc(gameSessions.startedAt))
-  );
+  const userId = c.get('userId');
+
+  const ownSessionIds = db.select({ id: gameSessions.id }).from(gameSessions)
+    .where(eq(gameSessions.hostId, userId));
+
+  const [rows, agg] = await Promise.all([
+    db.select({
+      id: gameSessions.id,
+      quizId: gameSessions.quizId,
+      quizTitle: quizzes.title,
+      roomCode: gameSessions.roomCode,
+      mode: gameSessions.mode,
+      startedAt: gameSessions.startedAt,
+      endedAt: gameSessions.endedAt,
+      isTeam: sql<number | null>`json_extract(${gameSessions.summaryJson}, '$.isTeam')`,
+      playerCount: sql<number | null>`json_array_length(${gameSessions.summaryJson}, '$.players')`,
+    })
+      .from(gameSessions)
+      .leftJoin(quizzes, eq(quizzes.id, gameSessions.quizId))
+      .where(eq(gameSessions.hostId, userId))
+      .orderBy(desc(gameSessions.startedAt)),
+    db.select({
+      sessionId: sessionAnswers.sessionId,
+      answerCount: count(),
+      correctCount: sql<number>`coalesce(sum(${sessionAnswers.isCorrect}), 0)`,
+      askedCount: countDistinct(sessionAnswers.questionId),
+    })
+      .from(sessionAnswers)
+      .leftJoin(questions, eq(questions.id, sessionAnswers.questionId))
+      .where(and(
+        inArray(sessionAnswers.sessionId, ownSessionIds),
+        // A deleted question (NULL type) is treated as scored.
+        or(isNull(questions.type), notInArray(questions.type, UNSCORED_TYPES)),
+      ))
+      .groupBy(sessionAnswers.sessionId),
+  ]);
+
+  const aggById = new Map(agg.map((a) => [a.sessionId, a] as const));
+  return c.json(rows.map((r) => {
+    const a = aggById.get(r.id);
+    return {
+      ...r,
+      isTeam: Boolean(r.isTeam),
+      playerCount: r.playerCount ?? null,
+      answerCount: a?.answerCount ?? 0,
+      correctCount: Number(a?.correctCount ?? 0),
+      askedCount: a?.askedCount ?? 0,
+    };
+  }));
 });
 
 sessionsRoute.get('/:id', async (c) => {
@@ -90,6 +143,42 @@ sessionsRoute.get('/:id', async (c) => {
     .limit(1);
   if (!row) return c.json({ error: 'not found' }, 404);
   return c.json(row);
+});
+
+/**
+ * GET /api/sessions/:id/report — everything the client needs to build the report:
+ * the session (with quiz title), the quiz's questions (config included, so the report
+ * can label options and mark the correct one) and every stored answer. Three queries,
+ * one per table; the report math itself lives in src/features/results/report.ts.
+ */
+sessionsRoute.get('/:id/report', async (c) => {
+  const db = getDb(c.env);
+  const sessionId = c.req.param('id');
+
+  const [row] = await db.select({ session: gameSessions, quizTitle: quizzes.title })
+    .from(gameSessions)
+    .leftJoin(quizzes, eq(quizzes.id, gameSessions.quizId))
+    .where(and(eq(gameSessions.id, sessionId), eq(gameSessions.hostId, c.get('userId'))))
+    .limit(1);
+  if (!row) return c.json({ error: 'not found' }, 404);
+
+  const [qs, answers] = await Promise.all([
+    db.select({
+      id: questions.id, order: questions.order, type: questions.type,
+      prompt: questions.prompt, points: questions.points, config: questions.config,
+    }).from(questions).where(eq(questions.quizId, row.session.quizId)).orderBy(asc(questions.order)),
+    db.select().from(sessionAnswers).where(eq(sessionAnswers.sessionId, sessionId)),
+  ]);
+
+  return c.json({
+    session: { ...row.session, quizTitle: row.quizTitle ?? null },
+    questions: qs.map((q) => {
+      let config: unknown = null;
+      try { config = JSON.parse(q.config); } catch { /* keep null */ }
+      return { ...q, config };
+    }),
+    answers,
+  });
 });
 
 sessionsRoute.get('/:id/export.csv', async (c) => {
