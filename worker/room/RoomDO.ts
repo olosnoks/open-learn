@@ -2,7 +2,9 @@ import { DurableObject } from 'cloudflare:workers';
 import { ClientEventSchema, DEFAULT_ROOM_SETTINGS, type RoomSettings } from '../../src/shared/schemas';
 import { classicScoring, accuracyScoring } from './scoring';
 import {
-  evaluateAnswer, getCorrectAnswer, rankEntries, toWireQuestion, UNSCORED_TYPES, type StoredQuestion,
+  assignNickname, autoAdvanceAfterReveal, autoAdvanceStep, evaluateAnswer, getCorrectAnswer,
+  pickChoiceOrder, rankEntries, shuffleQuestionOrder, toWireQuestion, UNSCORED_TYPES,
+  type AutoAdvanceStage, type StoredQuestion,
 } from './machine';
 import type {
   ServerEvent, GamePhase, GameSnapshot, PlayerRow, ScoreRow,
@@ -38,6 +40,10 @@ type GameState = {
   questionStartedAt: number;
   endsAt: number;
   hostPausedAt: number | null;
+  /** Display order (choice / puzzle item ids) of the current question; null = authored order. */
+  choiceOrder?: string[] | null;
+  /** Set while an auto-advancing room sits on the reveal; drives the alarm. */
+  auto?: AutoAdvanceStage | null;
 };
 
 /** Survives hibernation via ws.serializeAttachment(); plain JS properties on `ws` do not. */
@@ -116,13 +122,17 @@ export class RoomDO extends DurableObject<Env> {
     const payload = (await request.json()) as InitPayload;
     if (this.getState()) return new Response('Already initialized', { status: 409 });
 
+    const settings: RoomSettings = { ...DEFAULT_ROOM_SETTINGS, ...(payload.settings ?? {}) };
+    // Shuffled once here and persisted, so the order survives hibernation and reconnects.
+    const questions = settings.shuffleQuestions ? shuffleQuestionOrder(payload.questions) : payload.questions;
     this.setState({
       sessionId: payload.sessionId, hostId: payload.hostId, hostToken: payload.hostToken,
       roomCode: payload.roomCode, mode: payload.mode, isTeam: payload.isTeam,
       teamCount: payload.teamCount ?? 2,
-      settings: { ...DEFAULT_ROOM_SETTINGS, ...(payload.settings ?? {}) },
-      phase: 'lobby', currentIndex: 0, questions: payload.questions,
+      settings,
+      phase: 'lobby', currentIndex: 0, questions,
       questionStartedAt: 0, endsAt: 0, hostPausedAt: null,
+      choiceOrder: null, auto: null,
     });
 
     if (payload.isTeam) {
@@ -207,21 +217,57 @@ export class RoomDO extends DurableObject<Env> {
     }
   }
 
+  /**
+   * One alarm, two jobs: the question timer (phase 'question') and the auto-advance timer
+   * (phase 'reveal' with settings.autoAdvance). Both are cleared by whatever host action
+   * supersedes them, so a stale alarm finds nothing to do and returns.
+   */
   async alarm() {
     const state = this.getState();
-    if (!state || state.phase !== 'question' || state.hostPausedAt) return;
-    await this.handleReveal(state);
+    if (!state) return;
+    if (state.phase === 'question') {
+      if (!state.hostPausedAt) await this.handleReveal(state);
+      return;
+    }
+    const action = autoAdvanceStep({
+      phase: state.phase, settings: state.settings ?? DEFAULT_ROOM_SETTINGS, stage: state.auto,
+      currentIndex: state.currentIndex, total: state.questions.length, now: Date.now(),
+    });
+    switch (action.kind) {
+      case 'scoreboard': {
+        const auto: AutoAdvanceStage = { stage: 'scoreboard', at: action.at };
+        this.setState({ ...state, auto });
+        await this.ctx.storage.setAlarm(action.at);
+        return;
+      }
+      case 'next': return this.handleNext(state);
+      case 'finish': return this.handleFinish(state);
+      case 'none':
+        // Fired a hair early for a pending stage: re-arm rather than strand the room on the reveal.
+        if (state.phase === 'reveal' && state.auto && state.settings?.autoAdvance) {
+          await this.ctx.storage.setAlarm(state.auto.at);
+        }
+        return;
+    }
   }
 
   private handleJoin(ws: WebSocket, nickname: string, teamId: string | undefined, state: GameState) {
     if (state.phase !== 'lobby') return this.send(ws, { type: 'ERROR', message: 'Game already started' });
     if (this.playerIdFor(ws)) return this.send(ws, { type: 'ERROR', message: 'Already joined' });
-    const trimmed = nickname.trim();
-    if (!trimmed || trimmed.length > 20) return this.send(ws, { type: 'ERROR', message: 'Nickname must be 1–20 chars' });
     const count = this.sql.exec(`SELECT COUNT(*) AS c FROM players`).one().c as number;
     if (count >= MAX_PLAYERS) return this.send(ws, { type: 'ERROR', message: 'Room is full' });
-    const taken = this.sql.exec(`SELECT id FROM players WHERE nickname = ?`, trimmed).toArray();
-    if (taken.length) return this.send(ws, { type: 'ERROR', message: 'Nickname taken' });
+
+    const generated = Boolean((state.settings ?? DEFAULT_ROOM_SETTINGS).nicknameGenerator);
+    let resolvedNickname: string;
+    if (generated) {
+      // The room picks the name; whatever the client typed (or previewed) is ignored.
+      resolvedNickname = assignNickname((name) => this.nicknameTaken(name));
+    } else {
+      const trimmed = nickname.trim();
+      if (!trimmed || trimmed.length > 20) return this.send(ws, { type: 'ERROR', message: 'Nickname must be 1–20 chars' });
+      if (this.nicknameTaken(trimmed)) return this.send(ws, { type: 'ERROR', message: 'Nickname taken' });
+      resolvedNickname = trimmed;
+    }
 
     let resolvedTeamId: string | null = null;
     if (state.isTeam) {
@@ -235,10 +281,17 @@ export class RoomDO extends DurableObject<Env> {
     this.sql.exec(
       `INSERT INTO players (id, nickname, score, streak, connected, connection_id, team_id)
        VALUES (?, ?, 0, 0, 1, ?, ?)`,
-      playerId, trimmed, this.connectionId(ws), resolvedTeamId
+      playerId, resolvedNickname, this.connectionId(ws), resolvedTeamId
     );
-    this.send(ws, { type: 'JOINED', playerId, sessionId: state.sessionId });
+    this.send(ws, {
+      type: 'JOINED', playerId, sessionId: state.sessionId,
+      ...(generated ? { nickname: resolvedNickname } : {}),
+    });
     this.broadcast({ type: 'LOBBY_UPDATE', players: this.players(), teams: this.teams() });
+  }
+
+  private nicknameTaken(nickname: string): boolean {
+    return this.sql.exec(`SELECT 1 FROM players WHERE nickname = ?`, nickname).toArray().length > 0;
   }
 
   private handleReconnect(ws: WebSocket, playerId: string, state: GameState) {
@@ -284,8 +337,12 @@ export class RoomDO extends DurableObject<Env> {
     const isCorrect = evaluateAnswer(question, answer);
     const scored = !UNSCORED_TYPES.has(question.type) && state.mode !== 'lecture';
     const strategy = state.mode === 'accuracy' ? accuracyScoring : classicScoring;
+    // The streak before this answer feeds the classic-mode streak bonus (see scoring.ts).
+    const prior = this.sql.exec(`SELECT streak FROM players WHERE id = ?`, playerId).one();
     const points = scored
-      ? strategy.score({ isCorrect, latencyMs, timeLimitMs, maxPoints: question.points })
+      ? strategy.score({
+          isCorrect, latencyMs, timeLimitMs, maxPoints: question.points, streak: prior.streak as number,
+        })
       : 0;
 
     this.sql.exec(
@@ -359,11 +416,16 @@ export class RoomDO extends DurableObject<Env> {
     const q = state.questions[state.currentIndex];
     const now = Date.now();
     const endsAt = now + q.timeLimitSec * 1000;
-    this.setState({ ...state, phase: 'question', questionStartedAt: now, endsAt, hostPausedAt: null });
+    // Decided once per question and persisted: host, players and reconnects all get this order.
+    const choiceOrder = pickChoiceOrder(q, state.settings ?? DEFAULT_ROOM_SETTINGS);
+    this.setState({
+      ...state, phase: 'question', questionStartedAt: now, endsAt, hostPausedAt: null,
+      choiceOrder, auto: null,
+    });
     await this.ctx.storage.setAlarm(endsAt);
     this.broadcast({
       type: 'QUESTION_STARTED',
-      question: toWireQuestion(q, state.currentIndex),
+      question: toWireQuestion(q, state.currentIndex, choiceOrder),
       index: state.currentIndex,
       total: state.questions.length,
       endsAt, serverTime: now,
@@ -373,8 +435,11 @@ export class RoomDO extends DurableObject<Env> {
   private async handleReveal(state: GameState) {
     if (state.phase !== 'question') return;
     const q = state.questions[state.currentIndex];
-    this.setState({ ...state, phase: 'reveal', hostPausedAt: null });
-    await this.ctx.storage.deleteAlarm();
+    const auto = autoAdvanceAfterReveal(state.settings ?? DEFAULT_ROOM_SETTINGS, Date.now());
+    this.setState({ ...state, phase: 'reveal', hostPausedAt: null, auto });
+    // With auto-advance the alarm now counts down the reveal; otherwise the host drives from here.
+    if (auto) await this.ctx.storage.setAlarm(auto.at);
+    else await this.ctx.storage.deleteAlarm();
     this.broadcast({
       type: 'QUESTION_REVEALED',
       questionId: q.id,
@@ -420,7 +485,7 @@ export class RoomDO extends DurableObject<Env> {
 
   private async handleFinish(state: GameState) {
     if (state.phase === 'finished') return;
-    this.setState({ ...state, phase: 'finished' });
+    this.setState({ ...state, phase: 'finished', auto: null });
     await this.ctx.storage.deleteAlarm();
     const podium = this.standings(3);
     this.broadcast({ type: 'GAME_FINISHED', podium });
@@ -499,7 +564,7 @@ export class RoomDO extends DurableObject<Env> {
     };
     if (state.phase === 'question' || state.phase === 'reveal') {
       const q = state.questions[state.currentIndex];
-      base.question = toWireQuestion(q, state.currentIndex);
+      base.question = toWireQuestion(q, state.currentIndex, state.choiceOrder);
       base.endsAt = state.endsAt;
       base.paused = Boolean(state.hostPausedAt);
       base.answerCount = this.answerCount(q.id);

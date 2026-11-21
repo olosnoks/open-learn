@@ -3,6 +3,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client';
 import { quizzes, questions, gameSessions, sessionAnswers } from '../db/schema';
+import { DEFAULT_ROOM_SETTINGS, RoomSettingsSchema, type RoomSettings } from '../../src/shared/schemas';
 import type { StoredQuestion } from '../room/machine';
 import { generateRoomCode } from '../room/roomCode';
 import type { AppEnv } from '../types';
@@ -14,12 +15,15 @@ const CreateSessionSchema = z.object({
   mode: z.enum(['classic', 'accuracy', 'lecture']).default('classic'),
   isTeam: z.boolean().default(false),
   teamCount: z.number().int().min(2).max(4).default(2),
+  /** Game options; anything omitted falls back to DEFAULT_ROOM_SETTINGS. */
+  settings: RoomSettingsSchema.partial().optional(),
 });
 
 sessionsRoute.post('/', async (c) => {
   const db = getDb(c.env);
   const userId = c.get('userId');
-  const { quizId, mode, isTeam, teamCount } = CreateSessionSchema.parse(await c.req.json());
+  const { quizId, mode, isTeam, teamCount, settings: partial } = CreateSessionSchema.parse(await c.req.json());
+  const settings: RoomSettings = { ...DEFAULT_ROOM_SETTINGS, ...(partial ?? {}) };
 
   const [quiz] = await db
     .select().from(quizzes)
@@ -47,6 +51,7 @@ sessionsRoute.post('/', async (c) => {
     id: q.id, order: q.order, type: q.type as StoredQuestion['type'],
     prompt: q.prompt, timeLimitSec: q.timeLimitSec, points: q.points,
     config: JSON.parse(q.config),
+    imageUrl: q.imageUrl ?? null,
   }));
 
   const id = c.env.ROOM.idFromName(roomCode);
@@ -54,7 +59,7 @@ sessionsRoute.post('/', async (c) => {
     new Request('https://do/init', {
       method: 'POST',
       body: JSON.stringify({
-        sessionId, hostId: userId, hostToken, roomCode, mode, isTeam, teamCount,
+        sessionId, hostId: userId, hostToken, roomCode, mode, isTeam, teamCount, settings,
         questions: storedQuestions,
       }),
     })
@@ -63,6 +68,7 @@ sessionsRoute.post('/', async (c) => {
 
   await db.insert(gameSessions).values({
     id: sessionId, quizId, hostId: userId, roomCode, mode, startedAt: Date.now(),
+    settingsJson: JSON.stringify(settings),
   });
 
   return c.json({ sessionId, roomCode, hostToken }, 201);

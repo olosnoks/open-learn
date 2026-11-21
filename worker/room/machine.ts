@@ -1,5 +1,6 @@
-import type { QuestionConfig } from '../../src/shared/schemas';
-import type { WireQuestion, PublicConfig, CorrectAnswer } from '../../src/shared/types';
+import type { QuestionConfig, RoomSettings } from '../../src/shared/schemas';
+import type { WireQuestion, PublicConfig, CorrectAnswer, GamePhase } from '../../src/shared/types';
+import { generateNickname } from '../../src/shared/nicknames';
 
 export type StoredQuestion = {
   id: string;
@@ -15,25 +16,72 @@ export type StoredQuestion = {
 /** Question types that never award points or affect streaks. */
 export const UNSCORED_TYPES: ReadonlySet<QuestionConfig['type']> = new Set(['poll', 'slide', 'scale']);
 
-function shuffle<T>(arr: T[]): T[] {
+/** Fisher-Yates on a copy. `rand` is injectable for deterministic tests. */
+export function shuffle<T>(arr: readonly T[], rand: () => number = Math.random): T[] {
   const out = [...arr];
   for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
 }
 
-function publicConfig(c: QuestionConfig): PublicConfig {
+/**
+ * Game option "shuffle questions": random play order, decided once at room init and persisted.
+ * Slides keep their original positions (they are usually section breaks or instructions);
+ * every other question is shuffled among the remaining slots.
+ */
+export function shuffleQuestionOrder(
+  questions: readonly StoredQuestion[], rand: () => number = Math.random
+): StoredQuestion[] {
+  const movable = shuffle(questions.filter((q) => q.type !== 'slide'), rand);
+  let k = 0;
+  return questions.map((q) => (q.type === 'slide' ? q : movable[k++]));
+}
+
+/**
+ * Decides the display order of a question's choices (or puzzle pieces) when it starts. The room
+ * stores the returned ids in state and passes them to every toWireQuestion() call, so the host
+ * screen, every phone, and every reconnect see the same order. Returns null when the question
+ * is shown in authored order. Puzzles are always shuffled: showing the pieces in the correct
+ * order would give the answer away.
+ */
+export function pickChoiceOrder(
+  q: StoredQuestion, settings: Pick<RoomSettings, 'shuffleAnswers'>, rand: () => number = Math.random
+): string[] | null {
+  const c = q.config;
+  if (c.type === 'puzzle') return shuffle(c.items, rand).map((i) => i.id);
+  if (!settings.shuffleAnswers) return null;
+  if (c.type === 'quiz' || c.type === 'multi_select' || c.type === 'poll') {
+    return shuffle(c.choices, rand).map((ch) => ch.id);
+  }
+  return null;
+}
+
+/** Reorders `items` to follow `order` (ids). Ids missing from `order` keep their place at the end. */
+function applyOrder<T extends { id: string }>(items: readonly T[], order: readonly string[] | null | undefined): T[] {
+  if (!order || order.length === 0) return [...items];
+  const byId = new Map(items.map((i) => [i.id, i] as const));
+  const out: T[] = [];
+  for (const id of order) {
+    const item = byId.get(id);
+    if (item) { out.push(item); byId.delete(id); }
+  }
+  for (const item of byId.values()) out.push(item);
+  return out;
+}
+
+function publicConfig(c: QuestionConfig, order?: readonly string[] | null): PublicConfig {
   switch (c.type) {
     case 'quiz':
     case 'multi_select':
-      return { type: c.type, choices: c.choices.map(({ id, label }) => ({ id, label })) };
+      return { type: c.type, choices: applyOrder(c.choices, order).map(({ id, label }) => ({ id, label })) };
     case 'poll':
-      return { type: 'poll', choices: c.choices };
+      return { type: 'poll', choices: applyOrder(c.choices, order) };
     case 'true_false': return { type: 'true_false' };
     case 'type_answer': return { type: 'type_answer' };
-    case 'puzzle': return { type: 'puzzle', items: shuffle(c.items) };
+    // No stored order (room state from before choiceOrder existed): fresh shuffle rather than leak the answer.
+    case 'puzzle': return { type: 'puzzle', items: order ? applyOrder(c.items, order) : shuffle(c.items) };
     case 'slide': return { type: 'slide', body: c.body };
     case 'slider': return { type: 'slider', min: c.min, max: c.max, step: c.step };
     case 'drop_pin': return { type: 'drop_pin', imageUrl: c.imageUrl };
@@ -41,10 +89,11 @@ function publicConfig(c: QuestionConfig): PublicConfig {
   }
 }
 
-export function toWireQuestion(q: StoredQuestion, index: number): WireQuestion {
+/** `choiceOrder` is the current question's order from pickChoiceOrder(); omit for authored order. */
+export function toWireQuestion(q: StoredQuestion, index: number, choiceOrder?: readonly string[] | null): WireQuestion {
   return {
     id: q.id, index, type: q.type, prompt: q.prompt,
-    timeLimitSec: q.timeLimitSec, points: q.points, config: publicConfig(q.config),
+    timeLimitSec: q.timeLimitSec, points: q.points, config: publicConfig(q.config, choiceOrder),
     ...(q.imageUrl ? { imageUrl: q.imageUrl } : {}),
   };
 }
@@ -131,4 +180,73 @@ export function rankEntries(entries: readonly RankEntry[]): Map<string, RankResu
     });
   }
   return out;
+}
+
+// --- Nickname generator --------------------------------------------------------------------------
+
+/** Random generated nicknames are retried this many times before a number suffix is appended. */
+export const NICKNAME_ATTEMPTS = 10;
+
+/**
+ * Game option "nickname generator": picks a unique friendly nickname for a joining player.
+ * `isTaken` answers whether a nickname is already in the room. After NICKNAME_ATTEMPTS
+ * collisions the last candidate gets a numeric suffix ("Brave Otter 2", "Brave Otter 3", ...),
+ * which always terminates and stays within the 20-char nickname limit for every list entry.
+ */
+export function assignNickname(isTaken: (name: string) => boolean, rand: () => number = Math.random): string {
+  let candidate = generateNickname(rand);
+  for (let i = 0; i < NICKNAME_ATTEMPTS; i++) {
+    if (!isTaken(candidate)) return candidate;
+    candidate = generateNickname(rand);
+  }
+  for (let n = 2; ; n++) {
+    const suffixed = `${candidate} ${n}`;
+    if (!isTaken(suffixed)) return suffixed;
+  }
+}
+
+// --- Auto-advance ------------------------------------------------------------------------------
+
+/** How long the room lingers on the answer reveal, then on the scoreboard, before the next question. */
+export const AUTO_ADVANCE_REVEAL_MS = 5_000;
+export const AUTO_ADVANCE_SCOREBOARD_MS = 5_000;
+
+/**
+ * Where an auto-advancing room is within the reveal phase. On the wire the phase stays 'reveal'
+ * for both stages (QUESTION_REVEALED already carries the standings, so existing screens need
+ * nothing new); the stage only drives the alarm. `at` is when the stage ends (epoch ms).
+ */
+export type AutoAdvanceStage = { stage: 'reveal' | 'scoreboard'; at: number };
+
+export type AutoAdvanceAction =
+  | { kind: 'none' }
+  | { kind: 'scoreboard'; at: number }
+  | { kind: 'next' }
+  | { kind: 'finish' };
+
+/** The stage to enter right after a question is revealed, or null when the option is off. */
+export function autoAdvanceAfterReveal(
+  settings: Pick<RoomSettings, 'autoAdvance'>, now: number
+): AutoAdvanceStage | null {
+  return settings.autoAdvance ? { stage: 'reveal', at: now + AUTO_ADVANCE_REVEAL_MS } : null;
+}
+
+/**
+ * Pure alarm logic for auto-advance: given the room's phase and stage, what to do when the alarm
+ * fires. Anything but an auto-advancing reveal whose stage has elapsed is 'none', so a host-driven
+ * room, a running or paused question, or a finished game is never moved by a stale alarm.
+ */
+export function autoAdvanceStep(input: {
+  phase: GamePhase;
+  settings: Pick<RoomSettings, 'autoAdvance'>;
+  stage: AutoAdvanceStage | null | undefined;
+  currentIndex: number;
+  total: number;
+  now: number;
+}): AutoAdvanceAction {
+  const { phase, settings, stage, currentIndex, total, now } = input;
+  if (phase !== 'reveal' || !settings.autoAdvance || !stage) return { kind: 'none' };
+  if (now < stage.at) return { kind: 'none' };
+  if (stage.stage === 'reveal') return { kind: 'scoreboard', at: now + AUTO_ADVANCE_SCOREBOARD_MS };
+  return currentIndex + 1 >= total ? { kind: 'finish' } : { kind: 'next' };
 }

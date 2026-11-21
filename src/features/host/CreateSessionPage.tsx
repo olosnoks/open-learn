@@ -4,9 +4,19 @@ import { HostShell } from '../../components/layout/HostShell';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { apiGet, apiPost } from '../../lib/api';
+import { DEFAULT_ROOM_SETTINGS, type RoomSettings } from '../../shared/schemas';
 
 type QuizSummary = { id: string; title: string; description: string | null };
 type SessionResp = { sessionId: string; roomCode: string; hostToken: string };
+
+/** One row per game option: label and a one-line description, in display order. */
+const GAME_OPTIONS: { key: keyof RoomSettings; label: string; description: string }[] = [
+  { key: 'shuffleQuestions', label: 'Shuffle questions', description: 'Play the questions in a random order (slides stay where they are)' },
+  { key: 'shuffleAnswers', label: 'Shuffle answers', description: 'Randomise the answer order on multiple-choice questions' },
+  { key: 'showAnswersOnDevices', label: 'Show answers on devices', description: 'Off: phones show only the coloured shapes, so eyes stay on the big screen' },
+  { key: 'nicknameGenerator', label: 'Friendly nickname generator', description: 'Players get a random nickname instead of typing their own' },
+  { key: 'autoAdvance', label: 'Auto-advance', description: 'Move from reveal to scoreboard to the next question without pressing Next' },
+];
 
 export function CreateSessionPage() {
   const navigate = useNavigate();
@@ -15,6 +25,7 @@ export function CreateSessionPage() {
   const [mode, setMode] = useState<'classic' | 'accuracy' | 'lecture'>('classic');
   const [isTeam, setIsTeam] = useState(false);
   const [teamCount, setTeamCount] = useState<2 | 3 | 4>(2);
+  const [settings, setSettings] = useState<RoomSettings>(DEFAULT_ROOM_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +42,7 @@ export function CreateSessionPage() {
     setError(null);
     setCreating(true);
     try {
-      const session = await apiPost<SessionResp>('/sessions', { quizId: selected, mode, isTeam, teamCount });
+      const session = await apiPost<SessionResp>('/sessions', { quizId: selected, mode, isTeam, teamCount, settings });
       sessionStorage.setItem('hostToken', session.hostToken);
       navigate(`/host/${session.sessionId}/${session.roomCode}`);
     } catch (e) {
@@ -95,6 +106,24 @@ export function CreateSessionPage() {
                 ))}
               </div>
             )}
+          </Card>
+
+          <Card className="mb-6 bg-cream text-ink">
+            <p className="mb-3 block text-sm font-semibold text-ink-muted">Game options</p>
+            <ul className="divide-y divide-brand-200">
+              {GAME_OPTIONS.map((opt) => (
+                <li key={opt.key}>
+                  <label className="flex items-center justify-between gap-4 py-3">
+                    <span>
+                      <span className="block font-semibold">{opt.label}</span>
+                      <span className="block text-sm text-ink-muted">{opt.description}</span>
+                    </span>
+                    <input type="checkbox" className="h-6 w-6 shrink-0" checked={settings[opt.key]}
+                      onChange={(e) => setSettings((s) => ({ ...s, [opt.key]: e.target.checked }))} />
+                  </label>
+                </li>
+              ))}
+            </ul>
           </Card>
 
           {error && <p role="alert" className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800">{error}</p>}
